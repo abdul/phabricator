@@ -58,6 +58,9 @@ return array(
   // configuration file to directly set $_SERVER['HTTPS'] to the correct value.
   'security.require-https' => false,
 
+  // Is Phabricator permitted to make outbound HTTP requests?
+  'security.allow-outbound-http' => true,
+
 
 // -- Internationalization -------------------------------------------------- //
 
@@ -110,7 +113,8 @@ return array(
   //  - %r The remote IP.
   //  - %T The request duration, in microseconds.
   //  - %U The request path.
-  //  - %u The logged-in user, if one is logged in.
+  //  - %u The logged-in username, if one is logged in.
+  //  - %P The logged-in user PHID, if one is logged in.
   //  - %M The HTTP method.
   //  - %m For conduit, the Conduit method which was invoked.
   //
@@ -151,6 +155,9 @@ return array(
   // Map of additional configuration values to mask.
   'config.mask' => array(),
 
+  // Ignore setup warnings of the following issues.
+  'config.ignore-issues' => array(),
+
 // --  MySQL  --------------------------------------------------------------- //
 
   // Class providing database configuration. It must implement
@@ -171,7 +178,9 @@ return array(
   // Phabricator supports PHP extensions MySQL and MySQLi. It is possible to
   // implement also other access mechanism (e.g. PDO_MySQL). The class must
   // extend AphrontMySQLDatabaseConnectionBase.
-  'mysql.implementation' => 'AphrontMySQLDatabaseConnection',
+  'mysql.implementation' => (extension_loaded('mysqli')
+    ? 'AphrontMySQLiDatabaseConnection'
+    : 'AphrontMySQLDatabaseConnection'),
 
 
 // -- Notifications --------------------------------------------------------- //
@@ -839,7 +848,12 @@ return array(
   'phabricator.show-beta-applications' => false,
 
   // Contains a list of uninstalled applications
-   'phabricator.uninstalled-applications' => array(),
+  'phabricator.uninstalled-applications' => array(),
+
+// -- Welcome Screen -------------------------------------------------------- //
+
+  // The custom HTML content for the Phabricator welcome screen.
+  'welcome.html' => null,
 
 // -- Files ----------------------------------------------------------------- //
 
@@ -881,6 +895,10 @@ return array(
     'image/x-icon'              => true,
     'image/vnd.microsoft.icon'  => true,
   ),
+
+  //  Configuration option for enabling imagemagick
+  //  to resize animated profile pictures (gif)
+  'files.enable-imagemagick' => false,
 
 // -- Storage --------------------------------------------------------------- //
 
@@ -1065,8 +1083,6 @@ return array(
 
 // -- Maniphest ------------------------------------------------------------- //
 
-  'maniphest.enabled' => true,
-
   // Array of custom fields for Maniphest tasks. For details on adding custom
   // fields to Maniphest, see "Maniphest User Guide: Adding Custom Fields".
   'maniphest.custom-fields' => array(),
@@ -1079,10 +1095,6 @@ return array(
   // See the constants in @{class:ManiphestTaskPriority} for valid values.
   // Defaults to "needs triage".
   'maniphest.default-priority' => 90,
-
-// -- Phriction ------------------------------------------------------------- //
-
-  'phriction.enabled' => true,
 
 // -- Phame ----------------------------------------------------------------- //
 
@@ -1286,6 +1298,7 @@ return array(
   // Set the default monospaced font style for users who haven't set a custom
   // style.
   'style.monospace' => '10px "Menlo", "Consolas", "Monaco", monospace',
+  'style.monospace.windows' => '11px "Menlo", "Consolas", "Monaco", monospace',
 
 
 // -- Debugging ------------------------------------------------------------- //

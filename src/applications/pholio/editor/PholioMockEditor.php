@@ -140,4 +140,34 @@ final class PholioMockEditor extends PhabricatorApplicationTransactionEditor {
     return true;
   }
 
+  protected function sortTransactions(array $xactions) {
+    $head = array();
+    $tail = array();
+
+    // Move inline comments to the end, so the comments preceed them.
+    foreach ($xactions as $xaction) {
+      $type = $xaction->getTransactionType();
+      if ($type == PholioTransactionType::TYPE_INLINE) {
+        $tail[] = $xaction;
+      } else {
+        $head[] = $xaction;
+      }
+    }
+
+    return array_values(array_merge($head, $tail));
+  }
+
+
+  protected function shouldImplyCC(
+    PhabricatorLiskDAO $object,
+    PhabricatorApplicationTransaction $xaction) {
+
+    switch ($xaction->getTransactionType()) {
+      case PholioTransactionType::TYPE_INLINE:
+        return true;
+    }
+
+    return parent::shouldImplyCC($object, $xaction);
+  }
+
 }

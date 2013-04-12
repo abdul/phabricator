@@ -62,8 +62,7 @@ final class PonderFeedController extends PonderController {
           $user,
           $user->getPHID(),
           $this->answerOffset,
-          self::PROFILE_ANSWER_PAGE_SIZE + 1
-        );
+          self::PROFILE_ANSWER_PAGE_SIZE + 1);
 
         $side_nav->appendChild(
           id(new PonderUserProfileView())
@@ -71,8 +70,7 @@ final class PonderFeedController extends PonderController {
           ->setAnswers($answers)
           ->setAnswerOffset($this->answerOffset)
           ->setPageSize(self::PROFILE_ANSWER_PAGE_SIZE)
-          ->setURI(new PhutilURI("/ponder/profile/"), "aoff")
-        );
+          ->setURI(new PhutilURI("/ponder/profile/"), "aoff"));
         break;
     }
 
@@ -82,6 +80,7 @@ final class PonderFeedController extends PonderController {
       array(
         'device'  => true,
         'title'   => $title,
+        'dust'    => true,
       ));
   }
 
@@ -94,7 +93,8 @@ final class PonderFeedController extends PonderController {
     $view->setNoDataString(pht('No matching questions.'));
     foreach ($questions as $question) {
       $item = new PhabricatorObjectItemView();
-      $item->setHeader('Q'.$question->getID().' '.$question->getTitle());
+      $item->setObjectName('Q'.$question->getID());
+      $item->setHeader($question->getTitle());
       $item->setHref('/Q'.$question->getID());
       $item->setObject($question);
 

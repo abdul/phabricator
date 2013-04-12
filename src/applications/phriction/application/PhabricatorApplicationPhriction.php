@@ -3,7 +3,7 @@
 final class PhabricatorApplicationPhriction extends PhabricatorApplication {
 
   public function getShortDescription() {
-    return 'Wiki';
+    return pht('Wiki');
   }
 
   public function getBaseURI() {
@@ -16,10 +16,6 @@ final class PhabricatorApplicationPhriction extends PhabricatorApplication {
 
   public function getHelpURI() {
     return PhabricatorEnv::getDoclink('article/Phriction_User_Guide.html');
-  }
-
-  public function isEnabled() {
-    return PhabricatorEnv::getEnvConfig('phriction.enabled');
   }
 
   public function getTitleGlyph() {
@@ -43,6 +39,7 @@ final class PhabricatorApplicationPhriction extends PhabricatorApplication {
         'edit/(?:(?P<id>[1-9]\d*)/)?' => 'PhrictionEditController',
         'delete/(?P<id>[1-9]\d*)/'    => 'PhrictionDeleteController',
         'new/'                        => 'PhrictionNewController',
+        'move/(?:(?P<id>[1-9]\d*)/)?'      => 'PhrictionMoveController',
 
         'preview/' => 'PhrictionDocumentPreviewController',
         'diff/(?P<id>[1-9]\d*)/' => 'PhrictionDiffController',

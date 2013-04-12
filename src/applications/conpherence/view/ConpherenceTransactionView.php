@@ -41,6 +41,7 @@ final class ConpherenceTransactionView extends AphrontView {
       ->setEpoch($transaction->getDateCreated())
       ->setContentSource($transaction->getContentSource());
 
+    $content = null;
     $content_class = null;
     $content = null;
     switch ($transaction->getTransactionType()) {
@@ -53,16 +54,23 @@ final class ConpherenceTransactionView extends AphrontView {
       case ConpherenceTransactionType::TYPE_FILES:
         $content = $transaction->getTitle();
         break;
+      case ConpherenceTransactionType::TYPE_PICTURE:
+        $img = $transaction->getHandle($transaction->getNewValue());
+        $content = array(
+          $transaction->getTitle(),
+          phutil_tag(
+            'img',
+            array(
+              'src' => $img->getImageURI()
+            )));
+        $transaction_view->addClass('conpherence-edited');
+        break;
       case ConpherenceTransactionType::TYPE_PARTICIPANTS:
         $content = $transaction->getTitle();
         $transaction_view->addClass('conpherence-edited');
         break;
       case PhabricatorTransactions::TYPE_COMMENT:
         $comment = $transaction->getComment();
-        $file_ids =
-          PhabricatorMarkupEngine::extractFilePHIDsFromEmbeddedFiles(
-            array($comment->getContent())
-          );
         $content = $this->markupEngine->getOutput(
           $comment,
           PhabricatorApplicationTransactionComment::MARKUP_FIELD_COMMENT);
@@ -73,14 +81,13 @@ final class ConpherenceTransactionView extends AphrontView {
         break;
     }
 
-    $transaction_view
-      ->appendChild(phutil_tag(
+    $transaction_view->appendChild(
+      phutil_tag(
         'div',
         array(
           'class' => $content_class
         ),
-        new PhutilSafeHTML($content))
-      );
+        $content));
 
     return $transaction_view->render();
   }

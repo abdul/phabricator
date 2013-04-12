@@ -7,6 +7,12 @@ final class PhabricatorPeopleProfileController
   private $page;
   private $profileUser;
 
+  public function shouldRequireAdmin() {
+    // Default for people app is true
+    // We desire public access here
+    return false;
+  }
+
   public function willProcessRequest(array $data) {
     $this->username = idx($data, 'username');
     $this->page = idx($data, 'page');
@@ -46,12 +52,7 @@ final class PhabricatorPeopleProfileController
 
     require_celerity_resource('phabricator-profile-css');
 
-    $profile = id(new PhabricatorUserProfile())->loadOneWhere(
-      'userPHID = %s',
-      $user->getPHID());
-    if (!$profile) {
-      $profile = new PhabricatorUserProfile();
-    }
+    $profile = $user->loadUserProfile();
     $username = phutil_escape_uri($user->getUserName());
 
     $menu = new PhabricatorMenuView();
@@ -94,8 +95,7 @@ final class PhabricatorPeopleProfileController
           ->setIsExternal(true)
           ->setName($name)
           ->setHref($href)
-          ->setType(PhabricatorMenuItemView::TYPE_LINK)
-        );
+          ->setType(PhabricatorMenuItemView::TYPE_LINK));
       }
     }
 
@@ -131,7 +131,7 @@ final class PhabricatorPeopleProfileController
       ->setDescription($profile->getTitle());
 
     if ($user->getIsDisabled()) {
-      $header->setStatus('Disabled');
+      $header->setStatus(pht('Disabled'));
     } else {
       $statuses = id(new PhabricatorUserStatus())->loadCurrentStatuses(
         array($user->getPHID()));
@@ -142,23 +142,21 @@ final class PhabricatorPeopleProfileController
 
     $nav->appendChild($header);
 
-    $content = '<div style="padding: 1em;">'.$content.'</div>';
+    $content = hsprintf('<div style="padding: 1em;">%s</div>', $content);
     $header->appendChild($content);
 
     if ($user->getPHID() == $viewer->getPHID()) {
       $nav->addFilter(
         null,
         pht('Edit Profile...'),
-        '/settings/panel/profile/'
-      );
+        '/settings/panel/profile/');
     }
 
     if ($viewer->getIsAdmin()) {
       $nav->addFilter(
         null,
         pht('Administrate User...'),
-        '/people/edit/'.$user->getID().'/'
-      );
+        '/people/edit/'.$user->getID().'/');
     }
 
     return $this->buildApplicationPage(
@@ -172,46 +170,49 @@ final class PhabricatorPeopleProfileController
 
     $blurb = nonempty(
       $profile->getBlurb(),
-      '//'.
-      pht('Nothing is known about this rare specimen.')
-      .'//'
-    );
-
-    $engine = PhabricatorMarkupEngine::newProfileMarkupEngine();
-    $blurb = $engine->markupText($blurb);
+      '//'.pht('Nothing is known about this rare specimen.').'//');
 
     $viewer = $this->getRequest()->getUser();
 
-    $content =
+    $engine = PhabricatorMarkupEngine::newProfileMarkupEngine();
+    $engine->setConfig('viewer', $viewer);
+    $blurb = $engine->markupText($blurb);
+
+    $content = hsprintf(
       '<div class="phabricator-profile-info-group">
-        <h1 class="phabricator-profile-info-header">Basic Information</h1>
+        <h1 class="phabricator-profile-info-header">%s</h1>
         <div class="phabricator-profile-info-pane">
           <table class="phabricator-profile-info-table">
             <tr>
-              <th>PHID</th>
-              <td>'.phutil_escape_html($user->getPHID()).'</td>
+              <th>%s</th>
+              <td>%s</td>
             </tr>
             <tr>
-              <th>User Since</th>
-              <td>'.phabricator_datetime($user->getDateCreated(),
-                                         $viewer).
-             '</td>
+              <th>%s</th>
+              <td>%s</td>
             </tr>
           </table>
         </div>
-      </div>';
-    $content .=
+      </div>'.
       '<div class="phabricator-profile-info-group">
-        <h1 class="phabricator-profile-info-header">Flavor Text</h1>
+        <h1 class="phabricator-profile-info-header">%s</h1>
         <div class="phabricator-profile-info-pane">
           <table class="phabricator-profile-info-table">
             <tr>
-              <th>Blurb</th>
-              <td>'.$blurb.'</td>
+              <th>%s</th>
+              <td>%s</td>
             </tr>
           </table>
         </div>
-      </div>';
+      </div>',
+      pht('Basic Information'),
+      pht('PHID'),
+      $user->getPHID(),
+      pht('User Since'),
+      phabricator_datetime($user->getDateCreated(), $viewer),
+      pht('Flavor Text'),
+      pht('Blurb'),
+      $blurb);
 
     return $content;
   }
@@ -232,12 +233,12 @@ final class PhabricatorPeopleProfileController
     $builder->setUser($viewer);
     $view = $builder->buildView();
 
-    return
+    return hsprintf(
       '<div class="phabricator-profile-info-group">
-        <h1 class="phabricator-profile-info-header">Activity Feed</h1>
-        <div class="phabricator-profile-info-pane">
-          '.$view->render().'
-        </div>
-      </div>';
+        <h1 class="phabricator-profile-info-header">%s</h1>
+        <div class="phabricator-profile-info-pane">%s</div>
+      </div>',
+      pht('Activity Feed'),
+      $view->render());
   }
 }

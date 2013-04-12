@@ -165,10 +165,10 @@ final class AphrontSideNavFilterView extends AphrontView {
   public function render() {
     if ($this->menu->getItems()) {
       if (!$this->baseURI) {
-        throw new Exception("Call setBaseURI() before render()!");
+        throw new Exception(pht("Call setBaseURI() before render()!"));
       }
       if ($this->selectedFilter === false) {
-        throw new Exception("Call selectFilter() before render()!");
+        throw new Exception(pht("Call selectFilter() before render()!"));
       }
     }
 
@@ -203,7 +203,7 @@ final class AphrontSideNavFilterView extends AphrontView {
 
     if ($this->flexible) {
       $drag_id = celerity_generate_unique_node_id();
-      $flex_bar = phutil_render_tag(
+      $flex_bar = phutil_tag(
         'div',
         array(
           'class' => 'phabricator-nav-drag',
@@ -223,7 +223,7 @@ final class AphrontSideNavFilterView extends AphrontView {
         $nav_classes[] = 'has-local-nav';
       }
 
-      $menu_background = phutil_render_tag(
+      $menu_background = phutil_tag(
         'div',
         array(
           'class' => 'phabricator-nav-column-background',
@@ -231,13 +231,15 @@ final class AphrontSideNavFilterView extends AphrontView {
         ),
         '');
 
-      $local_menu = $menu_background.phutil_render_tag(
-        'div',
-        array(
-          'class' => 'phabricator-nav-local phabricator-side-menu',
-          'id'    => $local_id,
-        ),
-        self::renderSingleView($this->menu->setID($this->getMenuID()))
+      $local_menu = array(
+        $menu_background,
+        phutil_tag(
+          'div',
+          array(
+            'class' => 'phabricator-nav-local phabricator-side-menu',
+            'id'    => $local_id,
+          ),
+          $this->menu->setID($this->getMenuID())),
       );
     }
 
@@ -274,21 +276,26 @@ final class AphrontSideNavFilterView extends AphrontView {
 
     $nav_classes = array_merge($nav_classes, $this->classes);
 
-    return phutil_render_tag(
+    return phutil_tag(
       'div',
       array(
         'class' => implode(' ', $nav_classes),
         'id'    => $main_id,
       ),
-      $local_menu.
-      $flex_bar.
-      phutil_render_tag(
-        'div',
-        array(
-          'class' => 'phabricator-nav-content',
-          'id' => $content_id,
-        ),
-        $crumbs.$this->renderChildren()));
+      array(
+        $local_menu,
+        $flex_bar,
+        phutil_tag(
+          'div',
+          array(
+            'class' => 'phabricator-nav-content',
+            'id' => $content_id,
+          ),
+          array(
+            $crumbs,
+            $this->renderChildren(),
+          ))
+      ));
   }
 
 }

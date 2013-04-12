@@ -68,12 +68,10 @@ class AphrontDefaultApplicationConfiguration
         ),
       ),
 
-      '/xhprof/' => array(
-        'list/(?P<view>[^/]+)/' => 'PhabricatorXHProfSampleListController',
-        'profile/(?P<phid>[^/]+)/' => 'PhabricatorXHProfProfileController',
+      '/~/' => array(
+        '' => 'DarkConsoleController',
+        'data/(?P<key>[^/]+)/' => 'DarkConsoleDataController',
       ),
-
-      '/~/' => 'DarkConsoleController',
 
       '/search/' => array(
         '' => 'PhabricatorSearchController',
@@ -83,6 +81,8 @@ class AphrontDefaultApplicationConfiguration
         'select/(?P<type>\w+)/'
           => 'PhabricatorSearchSelectController',
         'index/(?P<phid>[^/]+)/' => 'PhabricatorSearchIndexController',
+        'hovercard/(?P<mode>retrieve|test)/' =>
+          'PhabricatorSearchHovercardController',
       ),
 
       '/status/' => 'PhabricatorStatusController',
@@ -90,13 +90,6 @@ class AphrontDefaultApplicationConfiguration
 
       '/help/' => array(
         'keyboardshortcut/' => 'PhabricatorHelpKeyboardShortcutController',
-      ),
-
-      '/chatlog/' => array(
-        '' =>
-          'PhabricatorChatLogChannelListController',
-        'channel/(?P<channel>[^/]+)/' =>
-          'PhabricatorChatLogChannelLogController',
       ),
 
       '/notification/' => array(
@@ -108,17 +101,14 @@ class AphrontDefaultApplicationConfiguration
         'clear/' => 'PhabricatorNotificationClearController',
       ),
 
-      '/phortune/' => array(
-        'stripe/' => array(
-          'testpaymentform/' => 'PhortuneStripeTestPaymentFormController',
-        ),
-      ),
+      '/debug/' => 'PhabricatorDebugController',
     );
   }
 
   protected function getResourceURIMapRules() {
     return array(
       '/res/' => array(
+        '(?:(?P<mtime>[0-9]+)T/)?'.
         '(?P<package>pkg/)?'.
         '(?P<hash>[a-f0-9]{8})/'.
         '(?P<path>.+\.(?:css|js|jpg|png|swf|gif))'
@@ -144,6 +134,7 @@ class AphrontDefaultApplicationConfiguration
       $response->setErrorInfo($ex->getMessage());
 
       return id(new AphrontJSONResponse())
+        ->setAddJSONShield(false)
         ->setContent($response->toDictionary());
     }
 
@@ -179,10 +170,9 @@ class AphrontDefaultApplicationConfiguration
         return $login_controller->processRequest();
       }
 
-      $content =
-        '<div class="aphront-policy-exception">'.
-          phutil_escape_html($ex->getMessage()).
-        '</div>';
+      $content = hsprintf(
+        '<div class="aphront-policy-exception">%s</div>',
+        $ex->getMessage());
 
       $dialog = new AphrontDialogView();
       $dialog
@@ -207,8 +197,8 @@ class AphrontDefaultApplicationConfiguration
 
     if ($ex instanceof AphrontUsageException) {
       $error = new AphrontErrorView();
-      $error->setTitle(phutil_escape_html($ex->getTitle()));
-      $error->appendChild(phutil_escape_html($ex->getMessage()));
+      $error->setTitle($ex->getTitle());
+      $error->appendChild($ex->getMessage());
 
       $view = new PhabricatorStandardPageView();
       $view->setRequest($this->getRequest());
@@ -224,8 +214,8 @@ class AphrontDefaultApplicationConfiguration
     // Always log the unhandled exception.
     phlog($ex);
 
-    $class    = phutil_escape_html(get_class($ex));
-    $message  = phutil_escape_html($ex->getMessage());
+    $class    = get_class($ex);
+    $message  = $ex->getMessage();
 
     if ($ex instanceof AphrontQuerySchemaException) {
       $message .=
@@ -241,11 +231,13 @@ class AphrontDefaultApplicationConfiguration
       $trace = null;
     }
 
-    $content =
+    $content = hsprintf(
       '<div class="aphront-unhandled-exception">'.
-        '<div class="exception-message">'.$message.'</div>'.
-        $trace.
-      '</div>';
+        '<div class="exception-message">%s</div>'.
+        '%s'.
+      '</div>',
+      $message,
+      $trace);
 
     $dialog = new AphrontDialogView();
     $dialog
@@ -333,29 +325,29 @@ class AphrontDefaultApplicationConfiguration
               '$'.$part['line'];
             $attrs['target'] = '_blank';
           }
-          $file_name = phutil_render_tag(
+          $file_name = phutil_tag(
             'a',
             $attrs,
-            phutil_escape_html($relative));
+            $relative);
         } else {
-          $file_name = phutil_render_tag(
+          $file_name = phutil_tag(
             'span',
             array(
               'title' => $file,
             ),
-            phutil_escape_html($relative));
+            $relative);
         }
-        $file_name = $file_name.' : '.(int)$part['line'];
+        $file_name = hsprintf('%s : %d', $file_name, $part['line']);
       } else {
-        $file_name = '<em>(Internal)</em>';
+        $file_name = phutil_tag('em', array(), '(Internal)');
       }
 
 
       $rows[] = array(
         $depth--,
-        phutil_escape_html($lib),
+        $lib,
         $file_name,
-        phutil_escape_html($where),
+        $where,
       );
     }
     $table = new AphrontTableView($rows);
@@ -374,11 +366,12 @@ class AphrontDefaultApplicationConfiguration
         'wide',
       ));
 
-    return
+    return hsprintf(
       '<div class="exception-trace">'.
         '<div class="exception-trace-header">Stack Trace</div>'.
-        $table->render().
-      '</div>';
+        '%s'.
+      '</div>',
+      $table->render());
   }
 
 }

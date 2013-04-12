@@ -22,9 +22,15 @@ final class PhabricatorSettingsPanelDiffPreferences
     $pref_filetree = PhabricatorUserPreferences::PREFERENCE_DIFF_FILETREE;
 
     if ($request->isFormPost()) {
-      $preferences->setPreference(
-        $pref_filetree,
-        $request->getInt($pref_filetree));
+      $filetree = $request->getInt($pref_filetree);
+
+      if ($filetree && !$preferences->getPreference($pref_filetree)) {
+        $preferences->setPreference(
+          PhabricatorUserPreferences::PREFERENCE_NAV_COLLAPSED,
+          false);
+      }
+
+      $preferences->setPreference($pref_filetree, $filetree);
 
       $preferences->save();
       return id(new AphrontRedirectResponse())
@@ -44,8 +50,10 @@ final class PhabricatorSettingsPanelDiffPreferences
               1 => pht('Enable Filetree'),
             ))
           ->setCaption(
-            pht("When looking at a revision or commit, show affected files ".
-                "in a sidebar.")))
+            pht("When looking at a revision or commit, enable a sidebar ".
+                "showing affected files. You can press %s to show or hide ".
+                "the sidebar.",
+                phutil_tag('tt', array(), 'f'))))
       ->appendChild(
         id(new AphrontFormSubmitControl())
           ->setValue(pht('Save Preferences')));

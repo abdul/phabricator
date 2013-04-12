@@ -11,6 +11,7 @@ final class PhabricatorImageTransformer {
       $image,
       array(
         'name' => 'meme-'.$file->getName(),
+        'ttl' => time() + 60 * 60 * 24,
       ));
   }
 
@@ -61,23 +62,20 @@ final class PhabricatorImageTransformer {
     $top,
     $left,
     $width,
-    $height
-  ) {
+    $height) {
 
     $image = $this->crasslyCropTo(
       $file,
       $top,
       $left,
       $width,
-      $height
-    );
+      $height);
 
     return PhabricatorFile::newFromFileData(
       $image,
       array(
         'name' => 'conpherence-'.$file->getName(),
-      )
-    );
+      ));
   }
 
   private function crudelyCropTo(PhabricatorFile $file, $x, $min_y, $max_y) {
@@ -95,8 +93,14 @@ final class PhabricatorImageTransformer {
       $scaled_y = $min_y;
     }
 
+    $cropped = $this->applyScaleWithImagemagick($file, $x, $scaled_y);
+
+    if ($cropped != null) {
+      return $cropped;
+    }
+
     $img = $this->applyScaleTo(
-      $img,
+      $file,
       $x,
       $scaled_y);
 
@@ -120,8 +124,7 @@ final class PhabricatorImageTransformer {
       0, 0,
       $orig_x, $orig_y,
       $w, $h,
-      $orig_w, $orig_h
-    );
+      $orig_w, $orig_h);
 
     return $this->saveImageDataInAnyFormat($dst, $file->getMimeType());
   }
@@ -131,11 +134,13 @@ final class PhabricatorImageTransformer {
    * Very crudely scale an image up or down to an exact size.
    */
   private function crudelyScaleTo(PhabricatorFile $file, $dx, $dy) {
-    $data = $file->loadFileData();
-    $src = imagecreatefromstring($data);
+    $scaled = $this->applyScaleWithImagemagick($file, $dx, $dy);
 
-    $dst = $this->applyScaleTo($src, $dx, $dy);
+    if ($scaled != null) {
+      return $scaled;
+    }
 
+    $dst = $this->applyScaleTo($file, $dx, $dy);
     return $this->saveImageDataInAnyFormat($dst, $file->getMimeType());
   }
 
@@ -147,16 +152,21 @@ final class PhabricatorImageTransformer {
     return $dst;
   }
 
-  private function applyScaleTo($src, $dx, $dy) {
+  private function applyScaleTo(PhabricatorFile $file, $dx, $dy) {
+    $data = $file->loadFileData();
+    $src = imagecreatefromstring($data);
+
     $x = imagesx($src);
     $y = imagesy($src);
 
     $scale = min(($dx / $x), ($dy / $y), 1);
 
-    $dst = $this->getBlankDestinationFile($dx, $dy);
-
     $sdx = $scale * $x;
     $sdy = $scale * $y;
+
+    $dst = $this->getBlankDestinationFile($dx, $dy);
+    imagesavealpha($dst, true);
+    imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 255, 255, 255, 127));
 
     imagecopyresampled(
       $dst,
@@ -167,14 +177,21 @@ final class PhabricatorImageTransformer {
       $x, $y);
 
     return $dst;
+
   }
 
   public static function getPreviewDimensions(PhabricatorFile $file, $size) {
-    $data = $file->loadFileData();
-    $src = imagecreatefromstring($data);
+    $metadata = $file->getMetadata();
+    $x = idx($metadata, PhabricatorFile::METADATA_IMAGE_WIDTH);
+    $y = idx($metadata, PhabricatorFile::METADATA_IMAGE_HEIGHT);
 
-    $x = imagesx($src);
-    $y = imagesy($src);
+    if (!$x || !$y) {
+      $data = $file->loadFileData();
+      $src = imagecreatefromstring($data);
+
+      $x = imagesx($src);
+      $y = imagesy($src);
+    }
 
     $scale = min($size / $x, $size / $y, 1);
 
@@ -337,7 +354,7 @@ final class PhabricatorImageTransformer {
 
   private function saveImageDataInAnyFormat($data, $preferred_mime = '') {
     switch ($preferred_mime) {
-      case 'image/gif': // GIF doesn't support true color.
+      case 'image/gif': // Gif doesn't support true color
       case 'image/png':
         if (function_exists('imagepng')) {
           ob_start();
@@ -366,6 +383,44 @@ final class PhabricatorImageTransformer {
     }
 
     return $img;
+  }
+
+  private function applyScaleWithImagemagick(PhabricatorFile $file, $dx, $dy) {
+
+    $img_type = $file->getMimeType();
+    $imagemagick = PhabricatorEnv::getEnvConfig('files.enable-imagemagick');
+
+    if ($img_type != 'image/gif' || $imagemagick == false) {
+      return null;
+    }
+
+    $data = $file->loadFileData();
+    $src = imagecreatefromstring($data);
+
+    $x = imagesx($src);
+    $y = imagesy($src);
+
+    $scale = min(($dx / $x), ($dy / $y), 1);
+
+    $sdx = $scale * $x;
+    $sdy = $scale * $y;
+
+    $input = new TempFile();
+    Filesystem::writeFile($input, $data);
+
+    $resized = new TempFile();
+
+    list($err) = exec_manual(
+                 'convert %s -coalesce -resize %sX%s\! %s'
+                  , $input, $sdx, $sdy, $resized);
+
+    if (!$err) {
+      $new_data = Filesystem::readFile($resized);
+      return $new_data;
+    } else {
+      return null;
+    }
+
   }
 
 }

@@ -84,7 +84,7 @@ abstract class PhabricatorDirectoryController extends PhabricatorController {
         $show_item = id(new PhabricatorMenuItemView())
           ->setName(pht('Show More Applications'))
           ->setHref('#')
-          ->addSigil('home-show-applications')
+          ->addSigil('reveal-content')
           ->setID($show_item_id);
 
         $hide_item = id(new PhabricatorMenuItemView())
@@ -92,7 +92,7 @@ abstract class PhabricatorDirectoryController extends PhabricatorController {
           ->setHref('#')
           ->setStyle('display: none')
           ->setID($hide_item_id)
-          ->addSigil('home-hide-applications');
+          ->addSigil('reveal-content');
 
         $nav->addMenuItem($show_item);
         $tile_ids = array($hide_item_id);
@@ -135,21 +135,29 @@ abstract class PhabricatorDirectoryController extends PhabricatorController {
         $group_id = celerity_generate_unique_node_id();
         $tile_ids[] = $group_id;
         $nav->addCustomBlock(
-          phutil_render_tag(
+          phutil_tag(
             'div',
             array(
               'class' => 'application-tile-group',
               'id' => $group_id,
               'style' => ($is_hide ? 'display: none' : null),
             ),
-            id(new AphrontNullView())->appendChild($tiles)->render()));
+            mpull($tiles, 'render')));
       }
 
       if ($is_hide) {
-        Javelin::initBehavior('phabricator-home-reveal-tiles', array(
-          'tileIDs' => $tile_ids,
-          'showID' => $show_item_id,
-        ));
+        Javelin::initBehavior('phabricator-reveal-content');
+
+        $show_item->setMetadata(
+          array(
+            'showIDs' => $tile_ids,
+            'hideIDs' => array($show_item_id),
+          ));
+        $hide_item->setMetadata(
+          array(
+            'showIDs' => array($show_item_id),
+            'hideIDs' => $tile_ids,
+          ));
         $nav->addMenuItem($hide_item);
       }
     }

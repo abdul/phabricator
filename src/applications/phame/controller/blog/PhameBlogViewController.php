@@ -65,15 +65,33 @@ final class PhameBlogViewController extends PhameController {
   }
 
   private function renderProperties(PhameBlog $blog, PhabricatorUser $user) {
+    require_celerity_resource('aphront-tooltip-css');
+    Javelin::initBehavior('phabricator-tooltips');
+
     $properties = new PhabricatorPropertyListView();
 
     $properties->addProperty(
       pht('Skin'),
-      phutil_escape_html($blog->getSkin()));
+      $blog->getSkin());
 
     $properties->addProperty(
       pht('Domain'),
-      phutil_escape_html($blog->getDomain()));
+      $blog->getDomain());
+
+    $feed_uri = PhabricatorEnv::getProductionURI(
+      $this->getApplicationURI('blog/feed/'.$blog->getID().'/'));
+    $properties->addProperty(
+      pht('Atom URI'),
+      javelin_tag('a',
+        array(
+          'href' => $feed_uri,
+          'sigil' => 'has-tooltip',
+          'meta' => array(
+            'tip' => pht('Atom URI does not support custom domains.'),
+            'size' => 320,
+          )
+        ),
+        $feed_uri));
 
     $descriptions = PhabricatorPolicyQuery::renderPolicyDescriptions(
       $user,
@@ -97,9 +115,12 @@ final class PhameBlogViewController extends PhameController {
       ->process();
 
     $properties->addTextContent(
-      '<div class="phabricator-remarkup">'.
-        $engine->getOutput($blog, PhameBlog::MARKUP_FIELD_DESCRIPTION).
-      '</div>');
+      phutil_tag(
+        'div',
+        array(
+          'class' => 'phabricator-remarkup',
+        ),
+        $engine->getOutput($blog, PhameBlog::MARKUP_FIELD_DESCRIPTION)));
 
     return $properties;
   }
@@ -130,8 +151,10 @@ final class PhameBlogViewController extends PhameController {
 
     $actions->addAction(
       id(new PhabricatorActionView())
+        ->setUser($user)
         ->setIcon('world')
         ->setHref($this->getApplicationURI('live/'.$blog->getID().'/'))
+        ->setRenderAsForm(true)
         ->setName(pht('View Live')));
 
     $actions->addAction(
