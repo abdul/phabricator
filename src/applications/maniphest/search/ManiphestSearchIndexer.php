@@ -15,7 +15,7 @@ final class ManiphestSearchIndexer
 
     $doc = new PhabricatorSearchAbstractDocument();
     $doc->setPHID($task->getPHID());
-    $doc->setDocumentType(PhabricatorPHIDConstants::PHID_TYPE_TASK);
+    $doc->setDocumentType(ManiphestPHIDTypeTask::TYPECONST);
     $doc->setDocumentTitle($task->getTitle());
     $doc->setDocumentCreated($task->getDateCreated());
     $doc->setDocumentModified($task->getDateModified());
@@ -27,14 +27,14 @@ final class ManiphestSearchIndexer
     $doc->addRelationship(
       PhabricatorSearchRelationship::RELATIONSHIP_AUTHOR,
       $task->getAuthorPHID(),
-      PhabricatorPHIDConstants::PHID_TYPE_USER,
+      PhabricatorPeoplePHIDTypeUser::TYPECONST,
       $task->getDateCreated());
 
     if ($task->getStatus() == ManiphestTaskStatus::STATUS_OPEN) {
       $doc->addRelationship(
         PhabricatorSearchRelationship::RELATIONSHIP_OPEN,
         $task->getPHID(),
-        PhabricatorPHIDConstants::PHID_TYPE_TASK,
+        ManiphestPHIDTypeTask::TYPECONST,
         time());
     }
 
@@ -80,7 +80,7 @@ final class ManiphestSearchIndexer
       $doc->addRelationship(
         PhabricatorSearchRelationship::RELATIONSHIP_PROJECT,
         $phid,
-        PhabricatorPHIDConstants::PHID_TYPE_PROJ,
+        PhabricatorProjectPHIDTypeProject::TYPECONST,
         $task->getDateModified()); // Bogus.
     }
 
@@ -88,7 +88,7 @@ final class ManiphestSearchIndexer
       $doc->addRelationship(
         PhabricatorSearchRelationship::RELATIONSHIP_OWNER,
         $owner->getNewValue(),
-        PhabricatorPHIDConstants::PHID_TYPE_USER,
+        PhabricatorPeoplePHIDTypeUser::TYPECONST,
         $owner->getDateCreated());
     } else {
       $doc->addRelationship(
@@ -104,15 +104,16 @@ final class ManiphestSearchIndexer
       $doc->addRelationship(
         PhabricatorSearchRelationship::RELATIONSHIP_TOUCH,
         $touch,
-        PhabricatorPHIDConstants::PHID_TYPE_USER,
+        PhabricatorPeoplePHIDTypeUser::TYPECONST,
         $time);
     }
 
     // We need to load handles here since non-users may subscribe (mailing
     // lists, e.g.)
-    $handles = id(new PhabricatorObjectHandleData(array_keys($ccs)))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer(PhabricatorUser::getOmnipotentUser())
-      ->loadHandles();
+      ->withPHIDs(array_keys($ccs))
+      ->execute();
     foreach ($ccs as $cc => $time) {
       $doc->addRelationship(
         PhabricatorSearchRelationship::RELATIONSHIP_SUBSCRIBER,

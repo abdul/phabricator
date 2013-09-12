@@ -100,10 +100,8 @@ final class PhabricatorTimelineEventView extends AphrontView {
   }
 
   public function render() {
-    $content = $this->renderChildren();
-
     $title = $this->title;
-    if (($title === null) && $this->isEmptyContent($content)) {
+    if (($title === null) && !$this->hasChildren()) {
       $title = '';
     }
 
@@ -125,8 +123,8 @@ final class PhabricatorTimelineEventView extends AphrontView {
           phutil_tag(
             'span',
             array(
-              'class' => 'phabricator-timeline-icon sprite-icon '.
-                         'action-'.$this->icon.'-white',
+              'class' => 'phabricator-timeline-icon sprite-icons '.
+                         'icons-'.$this->icon.'-white',
             ),
             ''));
       }
@@ -163,7 +161,7 @@ final class PhabricatorTimelineEventView extends AphrontView {
     $classes = array();
     $classes[] = 'phabricator-timeline-event-view';
     $classes[] = 'phabricator-timeline-border';
-    if (!$this->isEmptyContent($content)) {
+    if ($this->hasChildren()) {
       $classes[] = 'phabricator-timeline-major-event';
       $content = phutil_tag(
         'div',
@@ -182,7 +180,7 @@ final class PhabricatorTimelineEventView extends AphrontView {
               array(
                 'class' => 'phabricator-timeline-core-content',
               ),
-              $content),
+              $this->renderChildren()),
           )));
       $content = array($image, $wedge, $content);
     } else {

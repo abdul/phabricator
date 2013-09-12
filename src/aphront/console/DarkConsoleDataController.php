@@ -7,6 +7,10 @@ final class DarkConsoleDataController extends PhabricatorController {
 
   private $key;
 
+  public function shouldRequireLogin() {
+    return !PhabricatorEnv::getEnvConfig('darkconsole.always-on');
+  }
+
   public function willProcessRequest(array $data) {
     $this->key = $data['key'];
   }
@@ -51,7 +55,8 @@ final class DarkConsoleDataController extends PhabricatorController {
         $panel = $obj->renderPanel();
 
         if (!empty($_COOKIE['phsid'])) {
-          $panel = str_replace(
+          $panel = PhutilSafeHTML::applyFunction(
+            'str_replace',
             $_COOKIE['phsid'],
             '(session-key)',
             $panel);

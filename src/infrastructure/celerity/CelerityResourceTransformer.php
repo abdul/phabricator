@@ -9,6 +9,7 @@ final class CelerityResourceTransformer {
   private $rawResourceMap;
   private $celerityMap;
   private $translateURICallback;
+  private $currentPath;
 
   public function setTranslateURICallback($translate_uricallback) {
     $this->translateURICallback = $translate_uricallback;
@@ -30,11 +31,15 @@ final class CelerityResourceTransformer {
     return $this;
   }
 
+  /**
+   * @phutil-external-symbol function jsShrink
+   */
   public function transformResource($path, $data) {
     $type = self::getResourceType($path);
 
     switch ($type) {
       case 'css':
+        $data = $this->replaceCSSVariables($path, $data);
         $data = preg_replace_callback(
           '@url\s*\((\s*[\'"]?.*?)\)@s',
           nonempty(
@@ -70,17 +75,25 @@ final class CelerityResourceTransformer {
         $data = trim($data);
         break;
       case 'js':
-        $root = dirname(phutil_get_library_root('phabricator'));
-        $bin = $root.'/externals/javelin/support/jsxmin/jsxmin';
 
-        if (@file_exists($bin)) {
-          $future = new ExecFuture('%s __DEV__:0', $bin);
+        // If `jsxmin` is available, use it. jsxmin is the Javelin minifier and
+        // produces the smallest output, but is complicated to build.
+        if (Filesystem::binaryExists('jsxmin')) {
+          $future = new ExecFuture('jsxmin __DEV__:0');
           $future->write($data);
           list($err, $result) = $future->resolve();
           if (!$err) {
             $data = $result;
+            break;
           }
         }
+
+        // If `jsxmin` is not available, use `JsShrink`, which doesn't compress
+        // quite as well but is always available.
+        $root = dirname(phutil_get_library_root('phabricator'));
+        require_once $root.'/externals/JsShrink/jsShrink.php';
+        $data = jsShrink($data);
+
         break;
     }
 
@@ -106,6 +119,66 @@ final class CelerityResourceTransformer {
     }
 
     return 'url('.$uri.')';
+  }
+
+  private function replaceCSSVariables($path, $data) {
+    $this->currentPath = $path;
+    return preg_replace_callback(
+      '/{\$([^}]+)}/',
+      array($this, 'replaceCSSVariable'),
+      $data);
+  }
+
+  public function replaceCSSVariable($matches) {
+    static $map = array(
+      // Base Colors
+      'red'           => '#c0392b',
+      'lightred'      => '#f4dddb',
+      'orange'        => '#e67e22',
+      'lightorange'   => '#f7e2d4',
+      'yellow'        => '#f1c40f',
+      'lightyellow'   => '#fdf5d4',
+      'green'         => '#139543',
+      'lightgreen'    => '#d7eddf',
+      'blue'          => '#2980b9',
+      'lightblue'     => '#daeaf3',
+      'sky'           => '#3498db',
+      'lightsky'      => '#ddeef9',
+      'indigo'        => '#c6539d',
+      'lightindigo'   => '#f5e2ef',
+      'violet'        => '#8e44ad',
+      'lightviolet'   => '#ecdff1',
+
+      // Base Greys
+      'lightgreyborder'     => '#C7CCD9',
+      'greyborder'          => '#A1A6B0',
+      'darkgreyborder'      => '#676A70',
+      'lightgreytext'       => '#92969D',
+      'greytext'            => '#74777D',
+      'darkgreytext'        => '#4B4D51',
+      'lightgreybackground' => '#F7F7F7',
+      'greybackground'      => '#EBECEE',
+
+      // Base Blues
+      'thinblueborder'      => '#DDE8EF',
+      'lightblueborder'     => '#BFCFDA',
+      'blueborder'          => '#8C98B8',
+      'darkblueborder'      => '#626E82',
+      'lightbluebackground' => '#F8F9FC',
+      'bluebackground'      => '#DAE7FF',
+      'lightbluetext'       => '#8C98B8',
+      'bluetext'            => '#6B748C',
+      'darkbluetext'        => '#464C5C',
+    );
+
+    $var_name = $matches[1];
+    if (empty($map[$var_name])) {
+      $path = $this->currentPath;
+      throw new Exception(
+        "CSS file '{$path}' has unknown variable '{$var_name}'.");
+    }
+
+    return $map[$var_name];
   }
 
 }

@@ -15,8 +15,8 @@ final class HeraldTestConsoleController extends HeraldController {
     $errors = array();
     if ($request->isFormPost()) {
       if (!$object_name) {
-        $e_name = 'Required';
-        $errors[] = 'An object name is required.';
+        $e_name = pht('Required');
+        $errors[] = pht('An object name is required.');
       }
 
       if (!$errors) {
@@ -25,42 +25,42 @@ final class HeraldTestConsoleController extends HeraldController {
         if (preg_match('/^D(\d+)$/', $object_name, $matches)) {
           $object = id(new DifferentialRevision())->load($matches[1]);
           if (!$object) {
-            $e_name = 'Invalid';
-            $errors[] = 'No Differential Revision with that ID exists.';
+            $e_name = pht('Invalid');
+            $errors[] = pht('No Differential Revision with that ID exists.');
           }
         } else if (preg_match('/^r([A-Z]+)(\w+)$/', $object_name, $matches)) {
           $repo = id(new PhabricatorRepository())->loadOneWhere(
             'callsign = %s',
             $matches[1]);
           if (!$repo) {
-            $e_name = 'Invalid';
-            $errors[] = 'There is no repository with the callsign '.
-                        $matches[1].'.';
+            $e_name = pht('Invalid');
+            $errors[] = pht('There is no repository with the callsign: %s.',
+              $matches[1]);
           }
           $commit = id(new PhabricatorRepositoryCommit())->loadOneWhere(
             'repositoryID = %d AND commitIdentifier = %s',
             $repo->getID(),
             $matches[2]);
           if (!$commit) {
-            $e_name = 'Invalid';
-            $errors[] = 'There is no commit with that identifier.';
+            $e_name = pht('Invalid');
+            $errors[] = pht('There is no commit with that identifier.');
           }
           $object = $commit;
         } else {
-          $e_name = 'Invalid';
-          $errors[] = 'This object name is not recognized.';
+          $e_name = pht('Invalid');
+          $errors[] = pht('This object name is not recognized.');
         }
 
         if (!$errors) {
           if ($object instanceof DifferentialRevision) {
-            $adapter = new HeraldDifferentialRevisionAdapter(
+            $adapter = HeraldDifferentialRevisionAdapter::newLegacyAdapter(
               $object,
               $object->loadActiveDiff());
           } else if ($object instanceof PhabricatorRepositoryCommit) {
             $data = id(new PhabricatorRepositoryCommitData())->loadOneWhere(
               'commitID = %d',
               $object->getID());
-            $adapter = new HeraldCommitAdapter(
+            $adapter = HeraldCommitAdapter::newLegacyAdapter(
               $repo,
               $object,
               $data);
@@ -68,15 +68,19 @@ final class HeraldTestConsoleController extends HeraldController {
             throw new Exception("Can not build adapter for object!");
           }
 
-          $rules = HeraldRule::loadAllByContentTypeWithFullData(
-            $adapter->getHeraldTypeName(),
-            $object->getPHID());
+          $rules = id(new HeraldRuleQuery())
+            ->setViewer($user)
+            ->withContentTypes(array($adapter->getAdapterContentType()))
+            ->needConditionsAndActions(true)
+            ->needAppliedToPHIDs(array($object->getPHID()))
+            ->needValidateAuthors(true)
+            ->execute();
 
-          $engine = new HeraldEngine();
+          $engine = id(new HeraldEngine())
+            ->setDryRun(true);
+
           $effects = $engine->applyRules($rules, $adapter);
-
-          $dry_run = new HeraldDryRunAdapter();
-          $engine->applyEffects($effects, $dry_run, $rules);
+          $engine->applyEffects($effects, $adapter, $rules);
 
           $xscript = $engine->getTranscript();
 
@@ -88,19 +92,21 @@ final class HeraldTestConsoleController extends HeraldController {
 
     if ($errors) {
       $error_view = new AphrontErrorView();
-      $error_view->setTitle('Form Errors');
+      $error_view->setTitle(pht('Form Errors'));
       $error_view->setErrors($errors);
     } else {
       $error_view = null;
     }
 
+    $text = pht('Enter an object to test rules '.
+        'for, like a Diffusion commit (e.g., rX123) or a '.
+        'Differential revision (e.g., D123). You will be shown the '.
+        'results of a dry run on the object.');
+
     $form = id(new AphrontFormView())
       ->setUser($user)
       ->appendChild(hsprintf(
-        '<p class="aphront-form-instructions">Enter an object to test rules '.
-        'for, like a Diffusion commit (e.g., <tt>rX123</tt>) or a '.
-        'Differential revision (e.g., <tt>D123</tt>). You will be shown the '.
-        'results of a dry run on the object.</p>'))
+        '<p class="aphront-form-instructions">%s</p>', $text))
       ->appendChild(
         id(new AphrontFormTextControl())
           ->setLabel(pht('Object Name'))
@@ -111,18 +117,12 @@ final class HeraldTestConsoleController extends HeraldController {
         id(new AphrontFormSubmitControl())
           ->setValue(pht('Test Rules')));
 
-    $panel = new AphrontPanelView();
-    $panel->setHeader(pht('Test Herald Rules'));
-    $panel->setWidth(AphrontPanelView::WIDTH_FULL);
-    $panel->appendChild($form);
-    $panel->setNoBackground();
-
-    $nav = $this->renderNav();
+    $nav = $this->buildSideNavView();
     $nav->selectFilter('test');
     $nav->appendChild(
       array(
         $error_view,
-        $panel,
+        $form,
       ));
 
     $crumbs = id($this->buildApplicationCrumbs())
@@ -135,10 +135,11 @@ final class HeraldTestConsoleController extends HeraldController {
           ->setName(pht('Test Console')));
     $nav->setCrumbs($crumbs);
 
-    return $this->buildStandardPageResponse(
+    return $this->buildApplicationPage(
       $nav,
       array(
-        'title' => 'Test Console',
+        'title' => pht('Test Console'),
+        'device' => true,
       ));
   }
 

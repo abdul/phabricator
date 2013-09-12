@@ -71,7 +71,6 @@ final class PhabricatorDirectoryMainController
       array(
         'title' => 'Phabricator',
         'device' => true,
-        'dust' => true,
       ));
   }
 
@@ -99,12 +98,12 @@ final class PhabricatorDirectoryMainController
 
   private function buildUnbreakNowPanel() {
     $user = $this->getRequest()->getUser();
-    $user_phid = $user->getPHID();
 
-    $task_query = new ManiphestTaskQuery();
-    $task_query->withStatus(ManiphestTaskQuery::STATUS_OPEN);
-    $task_query->withPriority(ManiphestTaskPriority::PRIORITY_UNBREAK_NOW);
-    $task_query->setLimit(10);
+    $task_query = id(new ManiphestTaskQuery())
+      ->setViewer($user)
+      ->withStatus(ManiphestTaskQuery::STATUS_OPEN)
+      ->withPriority(ManiphestTaskPriority::PRIORITY_UNBREAK_NOW)
+      ->setLimit(10);
 
     $tasks = $task_query->execute();
 
@@ -136,14 +135,14 @@ final class PhabricatorDirectoryMainController
     assert_instances_of($projects, 'PhabricatorProject');
 
     $user = $this->getRequest()->getUser();
-    $user_phid = $user->getPHID();
 
     if ($projects) {
-      $task_query = new ManiphestTaskQuery();
-      $task_query->withStatus(ManiphestTaskQuery::STATUS_OPEN);
-      $task_query->withPriority(ManiphestTaskPriority::PRIORITY_TRIAGE);
-      $task_query->withAnyProjects(mpull($projects, 'getPHID'));
-      $task_query->setLimit(10);
+      $task_query = id(new ManiphestTaskQuery())
+        ->setViewer($user)
+        ->withStatus(ManiphestTaskQuery::STATUS_OPEN)
+        ->withPriority(ManiphestTaskPriority::PRIORITY_TRIAGE)
+        ->withAnyProjects(mpull($projects, 'getPHID'))
+        ->setLimit(10);
       $tasks = $task_query->execute();
     } else {
       $tasks = array();
@@ -183,14 +182,12 @@ final class PhabricatorDirectoryMainController
     $user = $this->getRequest()->getUser();
     $user_phid = $user->getPHID();
 
-    $revision_query = new DifferentialRevisionQuery();
-    $revision_query->withStatus(DifferentialRevisionQuery::STATUS_OPEN);
-    $revision_query->withResponsibleUsers(array($user_phid));
-    $revision_query->needRelationships(true);
+    $revision_query = id(new DifferentialRevisionQuery())
+      ->setViewer($user)
+      ->withStatus(DifferentialRevisionQuery::STATUS_OPEN)
+      ->withResponsibleUsers(array($user_phid))
+      ->needRelationships(true);
 
-    // NOTE: We need to unlimit this query to hit the responsible user
-    // fast-path.
-    $revision_query->setLimit(null);
     $revisions = $revision_query->execute();
 
     list($blocking, $active, ) = DifferentialRevisionQuery::splitResponsible(
@@ -229,7 +226,10 @@ final class PhabricatorDirectoryMainController
 
     $revision_view->setHandles($handles);
 
-    $panel->appendChild($revision_view);
+    $list_view = $revision_view->render();
+    $list_view->setFlush(true);
+
+    $panel->appendChild($list_view);
     $panel->setNoBackground();
 
     return $panel;
@@ -249,11 +249,12 @@ final class PhabricatorDirectoryMainController
     $user = $this->getRequest()->getUser();
     $user_phid = $user->getPHID();
 
-    $task_query = new ManiphestTaskQuery();
-    $task_query->withStatus(ManiphestTaskQuery::STATUS_OPEN);
-    $task_query->setGroupBy(ManiphestTaskQuery::GROUP_PRIORITY);
-    $task_query->withOwners(array($user_phid));
-    $task_query->setLimit(10);
+    $task_query = id(new ManiphestTaskQuery())
+      ->setViewer($user)
+      ->withStatus(ManiphestTaskQuery::STATUS_OPEN)
+      ->setGroupBy(ManiphestTaskQuery::GROUP_PRIORITY)
+      ->withOwners(array($user_phid))
+      ->setLimit(10);
 
     $tasks = $task_query->execute();
 
@@ -353,12 +354,10 @@ final class PhabricatorDirectoryMainController
       ));
 
     $panel = new AphrontPanelView();
-    $panel->setHeader('Jump Nav');
     $panel->setNoBackground();
     // $panel->appendChild();
 
     $list_filter = new AphrontListFilterView();
-    $list_filter->appendChild(phutil_tag('h1', array(), 'Jump Nav'));
     $list_filter->appendChild($form);
 
     $container = phutil_tag('div',

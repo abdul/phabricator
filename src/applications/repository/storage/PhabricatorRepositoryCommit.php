@@ -2,7 +2,9 @@
 
 final class PhabricatorRepositoryCommit
   extends PhabricatorRepositoryDAO
-  implements PhabricatorPolicyInterface {
+  implements
+    PhabricatorPolicyInterface,
+    PhabricatorTokenReceiverInterface {
 
   protected $repositoryID;
   protected $phid;
@@ -13,10 +15,10 @@ final class PhabricatorRepositoryCommit
   protected $auditStatus = PhabricatorAuditCommitStatusConstants::NONE;
   protected $summary = '';
 
-  private $commitData;
+  private $commitData = self::ATTACHABLE;
   private $audits;
   private $isUnparsed;
-  private $repository;
+  private $repository = self::ATTACHABLE;
 
   public function attachRepository(PhabricatorRepository $repository) {
     $this->repository = $repository;
@@ -24,10 +26,7 @@ final class PhabricatorRepositoryCommit
   }
 
   public function getRepository() {
-    if ($this->repository === null) {
-      throw new Exception("Call attachRepository() before getRepository()!");
-    }
-    return $this->repository;
+    return $this->assertAttached($this->repository);
   }
 
   public function setIsUnparsed($is_unparsed) {
@@ -48,7 +47,7 @@ final class PhabricatorRepositoryCommit
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_CMIT);
+      PhabricatorRepositoryPHIDTypeCommit::TYPECONST);
   }
 
   public function loadCommitData() {
@@ -66,10 +65,7 @@ final class PhabricatorRepositoryCommit
   }
 
   public function getCommitData() {
-    if (!$this->commitData) {
-      throw new Exception("Attach commit data with attachCommitData() first!");
-    }
-    return $this->commitData;
+    return $this->assertAttached($this->commitData);
   }
 
   public function attachAudits(array $audits) {
@@ -171,4 +167,35 @@ final class PhabricatorRepositoryCommit
     return $this->getRepository()->hasAutomaticCapability($capability, $viewer);
   }
 
+/* -(  PhabricatorTokenReceiverInterface  )---------------------------------- */
+
+  public function getUsersToNotifyOfTokenGiven() {
+    return array(
+      $this->getAuthorPHID(),
+    );
+  }
+
+/* -( Stuff for serialization )---------------------------------------------- */
+
+  /**
+   * NOTE: this is not a complete serialization; only the 'protected' fields are
+   * involved. This is due to ease of (ab)using the Lisk abstraction to get this
+   * done, as well as complexity of the other fields.
+   */
+  public function toDictionary() {
+    return array(
+      'repositoryID' => $this->getRepositoryID(),
+      'phid' =>  $this->getPHID(),
+      'commitIdentifier' =>  $this->getCommitIdentifier(),
+      'epoch' => $this->getEpoch(),
+      'mailKey' => $this->getMailKey(),
+      'authorPHID' => $this->getAuthorPHID(),
+      'auditStatus' => $this->getAuditStatus(),
+      'summary' => $this->getSummary());
+  }
+
+  public static function newFromDictionary(array $dict) {
+    return id(new PhabricatorRepositoryCommit())
+      ->loadFromArray($dict);
+  }
 }

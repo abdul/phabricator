@@ -50,6 +50,7 @@ final class PhabricatorApplicationManiphest extends PhabricatorApplication {
       '/T(?P<id>[1-9]\d*)' => 'ManiphestTaskDetailController',
       '/maniphest/' => array(
         '' => 'ManiphestTaskListController',
+        'query/(?:(?P<queryKey>[^/]+)/)?' => 'ManiphestTaskListControllerPro',
         'view/(?P<view>\w+)/' => 'ManiphestTaskListController',
         'report/(?:(?P<view>\w+)/)?' => 'ManiphestReportController',
         'batch/' => 'ManiphestBatchEditController',
@@ -59,7 +60,7 @@ final class PhabricatorApplicationManiphest extends PhabricatorApplication {
           'descriptionchange/(?:(?P<id>[1-9]\d*)/)?' =>
             'ManiphestTaskDescriptionChangeController',
           'descriptionpreview/' =>
-            'ManiphestTaskDescriptionPreviewController',
+            'PhabricatorMarkupPreviewController',
         ),
         'transaction/' => array(
           'save/' => 'ManiphestTransactionSaveController',
@@ -73,6 +74,8 @@ final class PhabricatorApplicationManiphest extends PhabricatorApplication {
           'edit/(?:(?P<id>[1-9]\d*)/)?' => 'ManiphestSavedQueryEditController',
           'delete/(?P<id>[1-9]\d*)/'   => 'ManiphestSavedQueryDeleteController',
         ),
+        'subscribe/(?P<action>add|rem)/(?P<id>[1-9]\d*)/'
+        => 'ManiphestSubscribeController',
       ),
     );
   }
@@ -81,6 +84,7 @@ final class PhabricatorApplicationManiphest extends PhabricatorApplication {
     $status = array();
 
     $query = id(new ManiphestTaskQuery())
+      ->setViewer($user)
       ->withStatus(ManiphestTaskQuery::STATUS_OPEN)
       ->withPriority(ManiphestTaskPriority::PRIORITY_UNBREAK_NOW)
       ->setLimit(1)
@@ -95,6 +99,7 @@ final class PhabricatorApplicationManiphest extends PhabricatorApplication {
       ->setCount($count);
 
     $query = id(new ManiphestTaskQuery())
+      ->setViewer($user)
       ->withStatus(ManiphestTaskQuery::STATUS_OPEN)
       ->withOwners(array($user->getPHID()))
       ->setLimit(1)

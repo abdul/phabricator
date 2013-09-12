@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * @group countdown
+ */
 final class PhabricatorApplicationCountdown extends PhabricatorApplication {
 
   public function getBaseURI() {
@@ -26,10 +29,16 @@ final class PhabricatorApplicationCountdown extends PhabricatorApplication {
     return self::GROUP_UTILITIES;
   }
 
+  public function getRemarkupRules() {
+    return array(
+      new PhabricatorCountdownRemarkupRule(),
+    );
+  }
+
   public function getRoutes() {
     return array(
       '/countdown/' => array(
-        ''
+        '(?:query/(?P<queryKey>[^/]+)/)?'
           => 'PhabricatorCountdownListController',
         '(?P<id>[1-9]\d*)/'
           => 'PhabricatorCountdownViewController',

@@ -498,7 +498,7 @@ final class PhabricatorRepositorySvnCommitChangeParserWorker
     $commit_data = queryfx_all(
       $commit_table->establishConnection('w'),
       'SELECT id, commitIdentifier FROM %T
-        WHERE repositoryID = %d AND commitIdentifier in (%Ld)',
+        WHERE repositoryID = %d AND commitIdentifier in (%Ls)',
       $commit_table->getTableName(),
       $repository->getID(),
       $commits);
@@ -570,7 +570,13 @@ final class PhabricatorRepositorySvnCommitChangeParserWorker
     PhabricatorRepository $repository,
     array $paths) {
 
+    $result_map = array();
     $repository_uri = $repository->getDetail('remote-uri');
+
+    if (isset($paths['/'])) {
+      $result_map['/'] = DifferentialChangeType::FILE_DIRECTORY;
+      unset($paths['/']);
+    }
 
     $parents = array();
     $path_mapping = array();
@@ -583,8 +589,6 @@ final class PhabricatorRepositorySvnCommitChangeParserWorker
       $parents[$parent] = true;
       $path_mapping[$parent][] = dirname($path);
     }
-
-    $result_map = array();
 
     // Reverse this list so we can pop $path_mapping, as that's more efficient
     // than shifting it. We need to associate these maps positionally because

@@ -32,15 +32,21 @@ final class ConduitAPI_differential_getcommitmessage_Method
     $id = $request->getValue('revision_id');
 
     if ($id) {
-      $revision = id(new DifferentialRevision())->load($id);
+      $revision = id(new DifferentialRevisionQuery())
+        ->withIDs(array($id))
+        ->setViewer($request->getUser())
+        ->needRelationships(true)
+        ->needReviewerStatus(true)
+        ->executeOne();
+
       if (!$revision) {
         throw new ConduitException('ERR_NOT_FOUND');
       }
     } else {
       $revision = new DifferentialRevision();
+      $revision->attachRelationships(array());
     }
 
-    $revision->loadRelationships();
 
     $is_edit = $request->getValue('edit');
     $is_create = ($is_edit == 'create');
@@ -91,9 +97,10 @@ final class ConduitAPI_differential_getcommitmessage_Method
       $aux_phids[$field_key] = $field->getRequiredHandlePHIDsForCommitMessage();
     }
     $phids = array_unique(array_mergev($aux_phids));
-    $handles = id(new PhabricatorObjectHandleData($phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer($request->getUser())
-      ->loadHandles();
+      ->withPHIDs($phids)
+      ->execute();
     foreach ($aux_fields as $field_key => $field) {
       $field->setHandles(array_select_keys($handles, $aux_phids[$field_key]));
     }

@@ -34,9 +34,9 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
 
     $editor = new DifferentialRevisionEditor($revision);
     $editor->setActor($actor);
+    $editor->addDiff($diff, null);
     $editor->copyFieldsFromConduit($fields);
 
-    $editor->addDiff($diff, null);
     $editor->save();
 
     return $revision;
@@ -48,18 +48,18 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
     $revision = $this->revision;
     $revision->loadRelationships();
 
-    $aux_fields = DifferentialFieldSelector::newSelector()
+    $all_fields = DifferentialFieldSelector::newSelector()
       ->getFieldSpecifications();
 
-    foreach ($aux_fields as $key => $aux_field) {
+    $aux_fields = array();
+    foreach ($all_fields as $aux_field) {
       $aux_field->setRevision($revision);
+      $aux_field->setDiff($this->diff);
       $aux_field->setUser($actor);
-      if (!$aux_field->shouldAppearOnCommitMessage()) {
-        unset($aux_fields[$key]);
+      if ($aux_field->shouldAppearOnCommitMessage()) {
+        $aux_fields[$aux_field->getCommitMessageKey()] = $aux_field;
       }
     }
-
-    $aux_fields = mpull($aux_fields, null, 'getCommitMessageKey');
 
     foreach ($fields as $field => $value) {
       if (empty($aux_fields[$field])) {
@@ -73,8 +73,7 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
       $aux_field->validateField();
     }
 
-    $aux_fields = array_values($aux_fields);
-    $this->setAuxiliaryFields($aux_fields);
+    $this->setAuxiliaryFields($all_fields);
   }
 
   public function setAuxiliaryFields(array $auxiliary_fields) {
@@ -233,7 +232,7 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
     $rem_ccs = array();
     $xscript_phid = null;
     if ($diff) {
-      $adapter = new HeraldDifferentialRevisionAdapter(
+      $adapter = HeraldDifferentialRevisionAdapter::newLegacyAdapter(
         $revision,
         $diff);
       $adapter->setExplicitCCs($new['ccs']);
@@ -284,11 +283,11 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
       $stable[$key] = array_diff_key($old[$key], $add[$key] + $rem[$key]);
     }
 
-    self::alterReviewers(
+    self::updateReviewers(
       $revision,
-      $this->reviewers,
-      array_keys($rem['rev']),
+      $this->getActor(),
       array_keys($add['rev']),
+      array_keys($rem['rev']),
       $this->getActorPHID());
 
     // We want to attribute new CCs to a "reasonPHID", representing the reason
@@ -345,9 +344,10 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
 
     $phids = array($this->getActorPHID());
 
-    $handles = id(new PhabricatorObjectHandleData($phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer($this->getActor())
-      ->loadHandles();
+      ->withPHIDs($phids)
+      ->execute();
     $actor_handle = $handles[$this->getActorPHID()];
 
     $changesets = null;
@@ -415,8 +415,6 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
         : $this->getComments(),
       'actor_phid'           => $revision->getAuthorPHID(),
     );
-    id(new PhabricatorTimelineEvent('difx', $event_data))
-      ->recordEvent();
 
     $mailed_phids = array();
     if (!$this->silentUpdate) {
@@ -574,7 +572,102 @@ final class DifferentialRevisionEditor extends PhabricatorEditor {
       array($revision->getAuthorPHID()));
   }
 
-  public static function alterReviewers(
+  public static function updateReviewers(
+    DifferentialRevision $revision,
+    PhabricatorUser $actor,
+    array $add_phids,
+    array $remove_phids) {
+
+    $reviewers = $revision->getReviewers();
+
+    // This is here until the new way proves stable enough
+    // See https://secure.phabricator.com/T1279
+    self::alterReviewers(
+      $revision,
+      $reviewers,
+      $remove_phids,
+      $add_phids,
+      $actor->getPHID());
+
+    $editor = id(new PhabricatorEdgeEditor())
+      ->setActor($actor);
+
+    $options = array(
+      'data' => array(
+        'status' => DifferentialReviewerStatus::STATUS_ADDED
+      )
+    );
+
+    $reviewer_phids_map = array_fill_keys($reviewers, true);
+
+    foreach ($add_phids as $phid) {
+
+      // Adding an already existing edge again would have cause memory loss
+      // That is, the previous state for that reviewer would be lost
+      if (isset($reviewer_phids_map[$phid])) {
+        continue;
+      }
+
+      $editor->addEdge(
+        $revision->getPHID(),
+        PhabricatorEdgeConfig::TYPE_DREV_HAS_REVIEWER,
+        $phid,
+        $options);
+    }
+
+    foreach ($remove_phids as $phid) {
+      $editor->removeEdge(
+        $revision->getPHID(),
+        PhabricatorEdgeConfig::TYPE_DREV_HAS_REVIEWER,
+        $phid);
+    }
+
+    $editor->save();
+  }
+
+  public static function updateReviewerStatus(
+    DifferentialRevision $revision,
+    PhabricatorUser $actor,
+    $reviewer_phid,
+    $status) {
+
+    $reviewers = $revision->getReviewers();
+    if (!in_array($reviewer_phid, $reviewers)) {
+      // This is here until the new way proves stable enough
+      // See https://secure.phabricator.com/T1279
+      self::alterReviewers(
+        $revision,
+        $reviewers,
+        array(),
+        array($reviewer_phid),
+        $actor->getPHID());
+    }
+
+    $options = array(
+      'data' => array(
+        'status' => $status
+      )
+    );
+
+    $active_diff = $revision->loadActiveDiff();
+    if ($active_diff) {
+      $options['data']['diff'] = $active_diff->getID();
+    }
+
+    id(new PhabricatorEdgeEditor())
+      ->setActor($actor)
+      ->addEdge(
+        $revision->getPHID(),
+        PhabricatorEdgeConfig::TYPE_DREV_HAS_REVIEWER,
+        $reviewer_phid,
+        $options)
+      ->save();
+  }
+
+  /**
+   * @deprecated
+   */
+  private static function alterReviewers(
     DifferentialRevision $revision,
     array $stable_phids,
     array $rem_phids,

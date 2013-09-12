@@ -29,7 +29,7 @@ abstract class DiffusionController extends PhabricatorController {
 
     $page = $this->buildStandardPageView();
 
-    $page->setApplicationName('Diffusion');
+    $page->setApplicationName(pht('Diffusion'));
     $page->setBaseURI('/diffusion/');
     $page->setTitle(idx($data, 'title'));
     $page->setGlyph("\xE2\x89\x88");
@@ -46,9 +46,9 @@ abstract class DiffusionController extends PhabricatorController {
     $nav->setBaseURI(new PhutilURI(''));
 
     $navs = array(
-      'history' => 'History View',
-      'browse'  => 'Browse View',
-      'change'  => 'Change View',
+      'history' => pht('History View'),
+      'browse'  => pht('Browse View'),
+      'change'  => pht('Change View'),
     );
 
     if (!$has_change_view) {
@@ -59,7 +59,7 @@ abstract class DiffusionController extends PhabricatorController {
     $branch = $drequest->loadBranch();
 
     if ($branch && $branch->getLintCommit()) {
-      $navs['lint'] = 'Lint View';
+      $navs['lint'] = pht('Lint View');
     }
 
     $selected_href = null;
@@ -80,7 +80,7 @@ abstract class DiffusionController extends PhabricatorController {
 
     $nav->addFilter(
       '',
-      "Search Owners \xE2\x86\x97",
+      pht("Search Owners \xE2\x86\x97"),
       '/owners/view/search/'.
         '?repository='.phutil_escape_uri($drequest->getCallsign()).
         '&path='.phutil_escape_uri('/'.$drequest->getPath()));
@@ -111,6 +111,7 @@ abstract class DiffusionController extends PhabricatorController {
     }
 
     $revisions = id(new DifferentialRevisionQuery())
+      ->setViewer($user)
       ->withPath($repository->getID(), $path_id)
       ->withStatus(DifferentialRevisionQuery::STATUS_OPEN)
       ->setOrder(DifferentialRevisionQuery::ORDER_PATH_MODIFIED)
@@ -125,19 +126,20 @@ abstract class DiffusionController extends PhabricatorController {
     $view = id(new DifferentialRevisionListView())
       ->setRevisions($revisions)
       ->setFields(DifferentialRevisionListView::getDefaultFields($user))
-      ->setUser($this->getRequest()->getUser())
+      ->setUser($user)
       ->loadAssets();
 
     $phids = $view->getRequiredHandlePHIDs();
     $handles = $this->loadViewerHandles($phids);
     $view->setHandles($handles);
 
-    $panel = new AphrontPanelView();
-    $panel->setId('pending-differential-revisions');
-    $panel->setHeader('Pending Differential Revisions');
-    $panel->appendChild($view);
+    $header = id(new PhabricatorHeaderView())
+      ->setHeader(pht('Pending Differential Revisions'));
 
-    return $panel;
+    return array(
+      $header,
+      $view,
+    );
   }
 
   private function buildCrumbList(array $spec = array()) {
@@ -190,14 +192,14 @@ abstract class DiffusionController extends PhabricatorController {
       $crumb = new PhabricatorCrumbView();
       if ($spec['commit']) {
         $crumb->setName(
-          "Tags for r{$callsign}{$raw_commit}");
+          pht("Tags for %s", 'r'.$callsign.$raw_commit));
         $crumb->setHref($drequest->generateURI(
           array(
             'action' => 'commit',
             'commit' => $raw_commit,
           )));
       } else {
-        $crumb->setName('Tags');
+        $crumb->setName(pht('Tags'));
       }
       $crumb_list[] = $crumb;
       return $crumb_list;
@@ -205,7 +207,7 @@ abstract class DiffusionController extends PhabricatorController {
 
     if ($spec['branches']) {
       $crumb = id(new PhabricatorCrumbView())
-        ->setName('Branches');
+        ->setName(pht('Branches'));
       $crumb_list[] = $crumb;
       return $crumb_list;
     }
@@ -236,16 +238,16 @@ abstract class DiffusionController extends PhabricatorController {
 
     switch ($view) {
       case 'history':
-        $view_name = 'History';
+        $view_name = pht('History');
         break;
       case 'browse':
-        $view_name = 'Browse';
+        $view_name = pht('Browse');
         break;
       case 'lint':
-        $view_name = 'Lint';
+        $view_name = pht('Lint');
         break;
       case 'change':
-        $view_name = 'Change';
+        $view_name = pht('Change');
         $crumb_list[] = $crumb->setName(
           hsprintf('%s (%s)', $path, $commit_link));
         return $crumb_list;
@@ -305,7 +307,7 @@ abstract class DiffusionController extends PhabricatorController {
               'commit' => '',
             ) + $uri_params),
         ),
-        'Jump to HEAD');
+        pht('Jump to HEAD'));
 
       $name = $last_crumb->getName();
       $name = hsprintf('%s @ %s (%s)', $name, $commit_link, $jump_link);
@@ -319,6 +321,26 @@ abstract class DiffusionController extends PhabricatorController {
     $crumb_list[] = $last_crumb;
 
     return $crumb_list;
+  }
+
+  protected function callConduitWithDiffusionRequest(
+    $method,
+    array $params = array()) {
+
+    $user = $this->getRequest()->getUser();
+    $drequest = $this->getDiffusionRequest();
+
+    return DiffusionQuery::callConduitWithDiffusionRequest(
+      $user,
+      $drequest,
+      $method,
+      $params);
+  }
+
+  protected function getRepositoryControllerURI(
+    PhabricatorRepository $repository,
+    $path) {
+    return $this->getApplicationURI($repository->getCallsign().'/'.$path);
   }
 
 }

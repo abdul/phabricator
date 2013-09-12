@@ -21,22 +21,29 @@ final class PhabricatorRepositoryCommitHeraldWorker
       return;
     }
 
-    $rules = HeraldRule::loadAllByContentTypeWithFullData(
-      HeraldContentTypeConfig::CONTENT_TYPE_COMMIT,
-      $commit->getPHID());
-
-    $adapter = new HeraldCommitAdapter(
+    $adapter = HeraldCommitAdapter::newLegacyAdapter(
       $repository,
       $commit,
       $data);
+
+    $rules = id(new HeraldRuleQuery())
+      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->withContentTypes(array($adapter->getAdapterContentType()))
+      ->needConditionsAndActions(true)
+      ->needAppliedToPHIDs(array($adapter->getPHID()))
+      ->needValidateAuthors(true)
+      ->execute();
+
     $engine = new HeraldEngine();
 
     $effects = $engine->applyRules($rules, $adapter);
     $engine->applyEffects($effects, $adapter, $rules);
+    $xscript = $engine->getTranscript();
 
     $audit_phids = $adapter->getAuditMap();
-    if ($audit_phids) {
-      $this->createAudits($commit, $audit_phids, $rules);
+    $cc_phids = $adapter->getAddCCMap();
+    if ($audit_phids || $cc_phids) {
+      $this->createAudits($commit, $audit_phids, $cc_phids, $rules);
     }
 
     $explicit_auditors = $this->createAuditsFromCommitMessage($commit, $data);
@@ -53,12 +60,11 @@ final class PhabricatorRepositoryCommitHeraldWorker
     $email_phids = array_unique(
       array_merge(
         $explicit_auditors,
+        array_keys($cc_phids),
         $herald_targets));
     if (!$email_phids) {
       return;
     }
-
-    $xscript = $engine->getTranscript();
 
     $revision = $adapter->loadDifferentialRevision();
     if ($revision) {
@@ -77,9 +83,10 @@ final class PhabricatorRepositoryCommitHeraldWorker
         $commit->getPHID(),
       ));
 
-    $handles = id(new PhabricatorObjectHandleData($phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer(PhabricatorUser::getOmnipotentUser())
-      ->loadHandles();
+      ->withPHIDs($phids)
+      ->execute();
 
     $commit_handle = $handles[$commit->getPHID()];
     $commit_name = $commit_handle->getName();
@@ -157,9 +164,10 @@ final class PhabricatorRepositoryCommitHeraldWorker
 
     $mails = $reply_handler->multiplexMail(
       $template,
-      id(new PhabricatorObjectHandleData($email_phids))
-        ->setViewer(PhabricatorUser::getOmnipotentUser())
-        ->loadHandles(),
+      id(new PhabricatorHandleQuery())
+      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->withPHIDs($email_phids)
+      ->execute(),
       array());
 
     foreach ($mails as $mail) {
@@ -170,6 +178,7 @@ final class PhabricatorRepositoryCommitHeraldWorker
   private function createAudits(
     PhabricatorRepositoryCommit $commit,
     array $map,
+    array $ccmap,
     array $rules) {
     assert_instances_of($rules, 'HeraldRule');
 
@@ -179,26 +188,44 @@ final class PhabricatorRepositoryCommitHeraldWorker
     $requests = mpull($requests, null, 'getAuditorPHID');
 
     $rules = mpull($rules, null, 'getID');
-    foreach ($map as $phid => $rule_ids) {
-      $request = idx($requests, $phid);
-      if ($request) {
-        continue;
-      }
-      $reasons = array();
-      foreach ($rule_ids as $id) {
-        $rule_name = '?';
-        if ($rules[$id]) {
-          $rule_name = $rules[$id]->getName();
-        }
-        $reasons[] = 'Herald Rule #'.$id.' "'.$rule_name.'" Triggered Audit';
-      }
 
-      $request = new PhabricatorRepositoryAuditRequest();
-      $request->setCommitPHID($commit->getPHID());
-      $request->setAuditorPHID($phid);
-      $request->setAuditStatus(PhabricatorAuditStatusConstants::AUDIT_REQUIRED);
-      $request->setAuditReasons($reasons);
-      $request->save();
+    $maps = array(
+      PhabricatorAuditStatusConstants::AUDIT_REQUIRED => $map,
+      PhabricatorAuditStatusConstants::CC => $ccmap,
+    );
+
+    foreach ($maps as $status => $map) {
+      foreach ($map as $phid => $rule_ids) {
+        $request = idx($requests, $phid);
+        if ($request) {
+          continue;
+        }
+        $reasons = array();
+        foreach ($rule_ids as $id) {
+          $rule_name = '?';
+          if ($rules[$id]) {
+            $rule_name = $rules[$id]->getName();
+          }
+          if ($status == PhabricatorAuditStatusConstants::AUDIT_REQUIRED) {
+            $reasons[] = pht(
+              'Herald Rule #%d "%s" Triggered Audit',
+              $id,
+              $rule_name);
+          } else {
+            $reasons[] = pht(
+              'Herald Rule #%d "%s" Triggered CC',
+              $id,
+              $rule_name);
+          }
+        }
+
+        $request = new PhabricatorRepositoryAuditRequest();
+        $request->setCommitPHID($commit->getPHID());
+        $request->setAuditorPHID($phid);
+        $request->setAuditStatus($status);
+        $request->setAuditReasons($reasons);
+        $request->save();
+      }
     }
 
     $commit->updateAuditStatus($requests);
@@ -363,8 +390,10 @@ final class PhabricatorRepositoryCommitHeraldWorker
 
     $drequest = DiffusionRequest::newFromDictionary(
       array(
-        'repository'  => $repository,
-        'commit'      => $commit->getCommitIdentifier(),
+        'user' => PhabricatorUser::getOmnipotentUser(),
+        'initFromConduit' => false,
+        'repository' => $repository,
+        'commit' => $commit->getCommitIdentifier(),
       ));
 
     $raw_query = DiffusionRawDiffQuery::newFromDiffusionRequest($drequest);

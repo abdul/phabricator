@@ -6,12 +6,13 @@ final class PhabricatorFileImageMacro extends PhabricatorFileDAO
     PhabricatorApplicationTransactionInterface,
     PhabricatorPolicyInterface {
 
+  protected $authorPHID;
   protected $filePHID;
   protected $phid;
   protected $name;
   protected $isDisabled = 0;
 
-  private $file;
+  private $file = self::ATTACHABLE;
 
   public function attachFile(PhabricatorFile $file) {
     $this->file = $file;
@@ -19,11 +20,7 @@ final class PhabricatorFileImageMacro extends PhabricatorFileDAO
   }
 
   public function getFile() {
-    if (!$this->file) {
-      throw new Exception("Attach a file with attachFile() first!");
-    }
-
-    return $this->file;
+    return $this->assertAttached($this->file);
   }
 
   public function getConfiguration() {
@@ -34,7 +31,7 @@ final class PhabricatorFileImageMacro extends PhabricatorFileDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_MCRO);
+      PhabricatorMacroPHIDTypeMacro::TYPECONST);
   }
 
   public function isAutomaticallySubscribed($phid) {

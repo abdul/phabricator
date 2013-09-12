@@ -15,8 +15,9 @@ final class PhabricatorTokenGivenFeedStory
   }
 
   public function renderView() {
-    $view = new PhabricatorFeedStoryView();
-    $view->setViewed($this->getHasViewed());
+    $view = $this->newStoryView();
+    $view->setAppIcon('token-dark');
+    $author_phid = $this->getValue('authorPHID');
 
     $href = $this->getHandle($this->getPrimaryObjectPHID())->getURI();
     $view->setHref($href);
@@ -27,14 +28,14 @@ final class PhabricatorTokenGivenFeedStory
       $this->linkTo($this->getValue('objectPHID')));
 
     $view->setTitle($title);
-    $view->setOneLineStory(true);
+    $view->setImage($this->getHandle($author_phid)->getImageURI());
 
     return $view;
   }
 
   public function renderText() {
     // TODO: This is grotesque; the feed notification handler relies on it.
-    return strip_tags($this->renderView()->render());
+    return strip_tags(hsprintf('%s', $this->renderView()->render()));
   }
 
 }

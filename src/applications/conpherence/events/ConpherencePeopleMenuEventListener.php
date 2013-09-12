@@ -3,34 +3,34 @@
 final class ConpherencePeopleMenuEventListener extends PhutilEventListener {
 
   public function register() {
-    $this->listen(PhabricatorEventType::TYPE_PEOPLE_DIDRENDERMENU);
+    $this->listen(PhabricatorEventType::TYPE_UI_DIDRENDERACTIONS);
   }
 
   public function handleEvent(PhutilEvent $event) {
     switch ($event->getType()) {
-      case PhabricatorEventType::TYPE_PEOPLE_DIDRENDERMENU:
-        $this->handleMenuEvent($event);
+      case PhabricatorEventType::TYPE_UI_DIDRENDERACTIONS:
+        $this->handleActionsEvent($event);
       break;
     }
   }
 
-  private function handleMenuEvent($event) {
-    $viewer = $event->getUser();
-    $menu = $event->getValue('menu');
-    $person = $event->getValue('person');
+  private function handleActionsEvent($event) {
+    $person = $event->getValue('object');
+    if (!($person instanceof PhabricatorUser)) {
+      return;
+    }
 
-    $conpherence_uri =
-      new PhutilURI('/conpherence/new/?participant='.$person->getPHID());
-    $name = pht('Conpherence');
+    $href = '/conpherence/new/?participant='.$person->getPHID();
 
-    $menu->addMenuItemBefore('activity',
-      id(new PhabricatorMenuItemView())
-      ->setIsExternal(true)
-      ->setName($name)
-      ->setHref($conpherence_uri)
-      ->setKey($name));
+    $actions = $event->getValue('actions');
 
-    $event->setValue('menu', $menu);
+    $actions[] = id(new PhabricatorActionView())
+      ->setIcon('message')
+      ->setName(pht('Send Message'))
+      ->setWorkflow(true)
+      ->setHref($href);
+
+    $event->setValue('actions', $actions);
   }
 
 }

@@ -48,8 +48,22 @@ final class PhameBlogViewController extends PhameController {
       $user,
       pht('This blog has no visible posts.'));
 
+    require_celerity_resource('phame-css');
+    $post_list = id(new PHUIBoxView())
+      ->addPadding(PHUI::PADDING_LARGE)
+      ->addClass('phame-post-list')
+      ->appendChild($post_list);
+
+
+    $crumbs = $this->buildApplicationCrumbs();
+    $crumbs->addCrumb(
+      id(new PhabricatorCrumbView())
+        ->setName($blog->getName())
+        ->setHref($this->getApplicationURI()));
+
     $nav->appendChild(
       array(
+        $crumbs,
         $header,
         $actions,
         $properties,
@@ -59,8 +73,8 @@ final class PhameBlogViewController extends PhameController {
     return $this->buildApplicationPage(
       $nav,
       array(
-        'device'  => true,
-        'title'   => $blog->getName(),
+        'device' => true,
+        'title' => $blog->getName(),
       ));
   }
 
@@ -129,6 +143,7 @@ final class PhameBlogViewController extends PhameController {
 
     $actions = id(new PhabricatorActionListView())
       ->setObject($blog)
+      ->setObjectURI($this->getRequest()->getRequestURI())
       ->setUser($user);
 
     $can_edit = PhabricatorPolicyFilter::hasCapability(
@@ -140,6 +155,8 @@ final class PhameBlogViewController extends PhameController {
       $user,
       $blog,
       PhabricatorPolicyCapability::CAN_JOIN);
+
+    $must_use_form = $blog->getDomain();
 
     $actions->addAction(
       id(new PhabricatorActionView())
@@ -154,7 +171,7 @@ final class PhameBlogViewController extends PhameController {
         ->setUser($user)
         ->setIcon('world')
         ->setHref($this->getApplicationURI('live/'.$blog->getID().'/'))
-        ->setRenderAsForm(true)
+        ->setRenderAsForm($must_use_form)
         ->setName(pht('View Live')));
 
     $actions->addAction(

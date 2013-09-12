@@ -26,12 +26,13 @@ final class DifferentialRevision extends DifferentialDAO
   protected $branchName;
   protected $arcanistProjectPHID;
 
-  private $relationships;
-  private $commits;
-  private $activeDiff = false;
-  private $diffIDs;
-  private $hashes;
+  private $relationships = self::ATTACHABLE;
+  private $commits = self::ATTACHABLE;
+  private $activeDiff = self::ATTACHABLE;
+  private $diffIDs = self::ATTACHABLE;
+  private $hashes = self::ATTACHABLE;
 
+  private $reviewerStatus = self::ATTACHABLE;
 
   const RELATIONSHIP_TABLE    = 'differential_relationship';
   const TABLE_COMMIT          = 'differential_commit';
@@ -85,10 +86,7 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
   public function getCommitPHIDs() {
-    if ($this->commits === null) {
-      throw new Exception("Must attach commits first!");
-    }
-    return $this->commits;
+    return $this->assertAttached($this->commits);
   }
 
   public function getActiveDiff() {
@@ -97,10 +95,7 @@ final class DifferentialRevision extends DifferentialDAO
     // It would be good to get rid of this once we make diff-attaching
     // transactional.
 
-    if ($this->activeDiff === false) {
-      throw new Exception("Must attach active diff first!");
-    }
-    return $this->activeDiff;
+    return $this->assertAttached($this->activeDiff);
   }
 
   public function attachActiveDiff($diff) {
@@ -109,10 +104,7 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
   public function getDiffIDs() {
-    if ($this->diffIDs === null) {
-      throw new Exception("Must attach diff IDs first!");
-    }
-    return $this->diffIDs;
+    return $this->assertAttached($this->diffIDs);
   }
 
   public function attachDiffIDs(array $ids) {
@@ -137,7 +129,7 @@ final class DifferentialRevision extends DifferentialDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_DREV);
+      DifferentialPHIDTypeRevision::TYPECONST);
   }
 
   public function loadDiffs() {
@@ -153,9 +145,9 @@ final class DifferentialRevision extends DifferentialDAO
     if (!$this->getID()) {
       return array();
     }
-    return id(new DifferentialComment())->loadAllWhere(
-      'revisionID = %d',
-      $this->getID());
+    return id(new DifferentialCommentQuery())
+      ->withRevisionIDs(array($this->getID()))
+      ->execute();
   }
 
   public function loadActiveDiff() {
@@ -192,16 +184,16 @@ final class DifferentialRevision extends DifferentialDAO
         self::TABLE_COMMIT,
         $this->getID());
 
-      $comments = id(new DifferentialComment())->loadAllWhere(
-        'revisionID = %d',
-        $this->getID());
+      $comments = id(new DifferentialCommentQuery())
+        ->withRevisionIDs(array($this->getID()))
+        ->execute();
       foreach ($comments as $comment) {
         $comment->delete();
       }
 
-      $inlines = id(new DifferentialInlineComment())->loadAllWhere(
-        'revisionID = %d',
-        $this->getID());
+      $inlines = id(new DifferentialInlineCommentQuery())
+        ->withRevisionIDs(array($this->getID()))
+        ->execute();
       foreach ($inlines as $inline) {
         $inline->delete();
       }
@@ -238,7 +230,6 @@ final class DifferentialRevision extends DifferentialDAO
       'SELECT * FROM %T WHERE revisionID = %d ORDER BY sequence',
       self::RELATIONSHIP_TABLE,
       $this->getID());
-
     return $this->attachRelationships($data);
   }
 
@@ -256,9 +247,7 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
   private function getRelatedPHIDs($relation) {
-    if ($this->relationships === null) {
-      throw new Exception("Must load relationships!");
-    }
+    $this->assertAttached($this->relationships);
 
     return ipull($this->getRawRelations($relation), 'objectPHID');
   }
@@ -304,10 +293,7 @@ final class DifferentialRevision extends DifferentialDAO
   }
 
   public function getHashes() {
-    if ($this->hashes === null) {
-      throw new Exception("Call attachHashes() before getHashes()!");
-    }
-    return $this->hashes;
+    return $this->assertAttached($this->hashes);
   }
 
   public function attachHashes(array $hashes) {
@@ -336,4 +322,14 @@ final class DifferentialRevision extends DifferentialDAO
     );
   }
 
+  public function getReviewerStatus() {
+    return $this->assertAttached($this->reviewerStatus);
+  }
+
+  public function attachReviewerStatus(array $reviewers) {
+    assert_instances_of($reviewers, 'DifferentialReviewer');
+
+    $this->reviewerStatus = $reviewers;
+    return $this;
+  }
 }

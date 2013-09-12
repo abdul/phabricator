@@ -34,6 +34,7 @@ final class PhortuneAccountViewController extends PhortuneController {
 
     $actions = id(new PhabricatorActionListView())
       ->setUser($user)
+      ->setObjectURI($request->getRequestURI())
       ->addAction(
         id(new PhabricatorActionView())
           ->setName(pht('Edit Account'))
@@ -72,7 +73,6 @@ final class PhortuneAccountViewController extends PhortuneController {
       array(
         'title' => $title,
         'device' => true,
-        'dust' => true,
       ));
   }
 
@@ -88,13 +88,14 @@ final class PhortuneAccountViewController extends PhortuneController {
 
     $actions = id(new PhabricatorActionListView())
       ->setUser($user)
+      ->setObjectURI($request->getRequestURI())
       ->addAction(
         id(new PhabricatorActionView())
           ->setName(pht('Add Payment Method'))
           ->setIcon('new')
           ->setHref($add_uri));
 
-    $list = id(new PhabricatorObjectItemListView())
+    $list = id(new PHUIObjectItemListView())
       ->setUser($user)
       ->setNoDataString(
         pht('No payment methods associated with this account.'));
@@ -110,8 +111,8 @@ final class PhortuneAccountViewController extends PhortuneController {
     }
 
     foreach ($methods as $method) {
-      $item = new PhabricatorObjectItemView();
-      $item->setHeader($method->getName());
+      $item = new PHUIObjectItemView();
+      $item->setHeader($method->getBrand().' / '.$method->getLastFourDigits());
 
       switch ($method->getStatus()) {
         case PhortunePaymentMethod::STATUS_ACTIVE:
@@ -125,10 +126,6 @@ final class PhortuneAccountViewController extends PhortuneController {
           'Added %s by %s',
           phabricator_datetime($method->getDateCreated(), $user),
           $this->getHandle($method->getAuthorPHID())->renderLink()));
-
-      if ($method->getExpiresEpoch() < time() + (60 * 60 * 24 * 30)) {
-        $item->addAttribute(pht('Expires Soon!'));
-      }
 
       $list->addItem($item);
     }
@@ -170,6 +167,7 @@ final class PhortuneAccountViewController extends PhortuneController {
 
     $xaction_view = id(new PhabricatorApplicationTransactionView())
       ->setUser($user)
+      ->setObjectPHID($account->getPHID())
       ->setTransactions($xactions)
       ->setMarkupEngine($engine);
 

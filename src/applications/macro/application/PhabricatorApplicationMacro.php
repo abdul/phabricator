@@ -22,10 +22,14 @@ final class PhabricatorApplicationMacro extends PhabricatorApplication {
     return self::GROUP_UTILITIES;
   }
 
+  public function getQuickCreateURI() {
+    return $this->getBaseURI().'create/';
+  }
+
   public function getRoutes() {
     return array(
       '/macro/' => array(
-        '((?P<filter>all|active|my)/)?' => 'PhabricatorMacroListController',
+        '(query/(?P<key>[^/]+)/)?' => 'PhabricatorMacroListController',
         'create/' => 'PhabricatorMacroEditController',
         'view/(?P<id>[1-9]\d*)/' => 'PhabricatorMacroViewController',
         'comment/(?P<id>[1-9]\d*)/' => 'PhabricatorMacroCommentController',

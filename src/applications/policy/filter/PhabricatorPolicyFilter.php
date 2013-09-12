@@ -70,7 +70,19 @@ final class PhabricatorPolicyFilter {
         'Call setViewer() and requireCapabilities() before apply()!');
     }
 
+    // If the viewer is omnipotent, short circuit all the checks and just
+    // return the input unmodified. This is an optimization; we know the
+    // result already.
+    if ($viewer->isOmnipotent()) {
+      return $objects;
+    }
+
     $filtered = array();
+    $viewer_phid = $viewer->getPHID();
+
+    if (empty($this->userProjects[$viewer_phid])) {
+      $this->userProjects[$viewer_phid] = array();
+    }
 
     $need_projects = array();
     foreach ($objects as $key => $object) {
@@ -84,8 +96,24 @@ final class PhabricatorPolicyFilter {
 
         $policy = $object->getPolicy($capability);
         $type = phid_get_type($policy);
-        if ($type == PhabricatorPHIDConstants::PHID_TYPE_PROJ) {
-          $need_projects[] = $policy;
+        if ($type == PhabricatorProjectPHIDTypeProject::TYPECONST) {
+          $need_projects[$policy] = $policy;
+        }
+      }
+    }
+
+    // If we need projects, check if any of the projects we need are also the
+    // objects we're filtering. Because of how project rules work, this is a
+    // common case.
+    if ($need_projects) {
+      foreach ($objects as $object) {
+        if ($object instanceof PhabricatorProject) {
+          $project_phid = $object->getPHID();
+          if (isset($need_projects[$project_phid])) {
+            $is_member = $object->isUserMember($viewer_phid);
+            $this->userProjects[$viewer_phid][$project_phid] = $is_member;
+            unset($need_projects[$project_phid]);
+          }
         }
       }
     }
@@ -93,40 +121,21 @@ final class PhabricatorPolicyFilter {
     if ($need_projects) {
       $need_projects = array_unique($need_projects);
 
-      // If projects have recursive policies, automatically fail them rather
-      // than looping. This will fall back to automatic capabilities and
-      // resolve the policies in a sensible way.
-      static $querying_projects = array();
-      foreach ($need_projects as $key => $project) {
-        if (empty($querying_projects[$project])) {
-          $querying_projects[$project] = true;
-          continue;
-        }
-        unset($need_projects[$key]);
-      }
+      // NOTE: We're using the omnipotent user here to avoid a recursive
+      // descent into madness. We don't actually need to know if the user can
+      // see these projects or not, since: the check is "user is member of
+      // project", not "user can see project"; and membership implies
+      // visibility anyway. Without this, we may load other projects and
+      // re-enter the policy filter and generally create a huge mess.
 
-      if ($need_projects) {
-        $caught = null;
-        try {
-          $projects = id(new PhabricatorProjectQuery())
-            ->setViewer($viewer)
-            ->withMemberPHIDs(array($viewer->getPHID()))
-            ->withPHIDs($need_projects)
-            ->execute();
-        } catch (Exception $ex) {
-          $caught = $ex;
-        }
+      $projects = id(new PhabricatorProjectQuery())
+        ->setViewer(PhabricatorUser::getOmnipotentUser())
+        ->withMemberPHIDs(array($viewer->getPHID()))
+        ->withPHIDs($need_projects)
+        ->execute();
 
-        foreach ($need_projects as $key => $project) {
-          unset($querying_projects[$project]);
-        }
-
-        if ($caught) {
-          throw $caught;
-        }
-
-        $projects = mpull($projects, null, 'getPHID');
-        $this->userProjects[$viewer->getPHID()] = $projects;
+      foreach ($projects as $project) {
+        $this->userProjects[$viewer_phid][$project->getPHID()] = true;
       }
     }
 
@@ -203,13 +212,13 @@ final class PhabricatorPolicyFilter {
         break;
       default:
         $type = phid_get_type($policy);
-        if ($type == PhabricatorPHIDConstants::PHID_TYPE_PROJ) {
+        if ($type == PhabricatorProjectPHIDTypeProject::TYPECONST) {
           if (isset($this->userProjects[$viewer->getPHID()][$policy])) {
             return true;
           } else {
             $this->rejectObject($object, $policy, $capability);
           }
-        } else if ($type == PhabricatorPHIDConstants::PHID_TYPE_USER) {
+        } else if ($type == PhabricatorPeoplePHIDTypeUser::TYPECONST) {
           if ($viewer->getPHID() == $policy) {
             return true;
           } else {
@@ -263,15 +272,16 @@ final class PhabricatorPolicyFilter {
         $who = "No one can {$verb} this object.";
         break;
       default:
-        $handle = PhabricatorObjectHandleData::loadOneHandle(
-          $policy,
-          $this->viewer);
+        $handle = id(new PhabricatorHandleQuery())
+          ->setViewer($this->viewer)
+          ->withPHIDs(array($policy))
+          ->executeOne();
 
         $type = phid_get_type($policy);
-        if ($type == PhabricatorPHIDConstants::PHID_TYPE_PROJ) {
+        if ($type == PhabricatorProjectPHIDTypeProject::TYPECONST) {
           $who = "To {$verb} this object, you must be a member of project ".
                  "'".$handle->getFullName()."'.";
-        } else if ($type == PhabricatorPHIDConstants::PHID_TYPE_USER) {
+        } else if ($type == PhabricatorPeoplePHIDTypeUser::TYPECONST) {
           $who = "Only '".$handle->getFullName()."' can {$verb} this object.";
         } else {
           $who = "It is unclear who can {$verb} this object.";

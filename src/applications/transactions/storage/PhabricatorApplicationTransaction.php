@@ -30,8 +30,21 @@ abstract class PhabricatorApplicationTransaction
   private $transactionGroup = array();
 
   abstract public function getApplicationTransactionType();
-  abstract public function getApplicationTransactionCommentObject();
-  abstract public function getApplicationObjectTypeName();
+
+  private function getApplicationObjectTypeName() {
+    $types = PhabricatorPHIDType::getAllTypes();
+
+    $type = idx($types, $this->getApplicationTransactionType());
+    if ($type) {
+      return $type->getTypeName();
+    }
+
+    return pht('Object');
+  }
+
+  public function getApplicationTransactionCommentObject() {
+    throw new Exception("Not implemented!");
+  }
 
   public function getApplicationTransactionViewObject() {
     return new PhabricatorApplicationTransactionView();
@@ -47,7 +60,7 @@ abstract class PhabricatorApplicationTransaction
   }
 
   public function generatePHID() {
-    $type = PhabricatorPHIDConstants::PHID_TYPE_XACT;
+    $type = PhabricatorApplicationTransactionPHIDTypeTransaction::TYPECONST;
     $subtype = $this->getApplicationTransactionType();
 
     return PhabricatorPHID::generateNewPHID($type, $subtype);
@@ -123,6 +136,15 @@ abstract class PhabricatorApplicationTransaction
         $phids[] = ipull($old, 'dst');
         $phids[] = ipull($new, 'dst');
         break;
+      case PhabricatorTransactions::TYPE_EDIT_POLICY:
+      case PhabricatorTransactions::TYPE_VIEW_POLICY:
+        if (!PhabricatorPolicyQuery::isGlobalPolicy($old)) {
+          $phids[] = array($old);
+        }
+        if (!PhabricatorPolicyQuery::isGlobalPolicy($new)) {
+          $phids[] = array($new);
+        }
+        break;
     }
 
     return array_mergev($phids);
@@ -141,6 +163,10 @@ abstract class PhabricatorApplicationTransaction
     return $this->handles[$phid];
   }
 
+  public function getHandleIfExists($phid) {
+    return idx($this->handles, $phid);
+  }
+
   public function getHandles() {
     if ($this->handles === null) {
       throw new Exception(
@@ -150,7 +176,7 @@ abstract class PhabricatorApplicationTransaction
     return $this->handles;
   }
 
-  protected function renderHandleLink($phid) {
+  public function renderHandleLink($phid) {
     if ($this->renderingTarget == self::TARGET_HTML) {
       return $this->getHandle($phid)->renderLink();
     } else {
@@ -158,7 +184,7 @@ abstract class PhabricatorApplicationTransaction
     }
   }
 
-  protected function renderHandleList(array $phids) {
+  public function renderHandleList(array $phids) {
     $links = array();
     foreach ($phids as $phid) {
       $links[] = $this->renderHandleLink($phid);
@@ -201,6 +227,10 @@ abstract class PhabricatorApplicationTransaction
     return false;
   }
 
+  public function shouldHideForMail() {
+    return $this->shouldHide();
+  }
+
   public function getNoEffectDescription() {
 
     switch ($this->getTransactionType()) {
@@ -237,21 +267,27 @@ abstract class PhabricatorApplicationTransaction
           '%s added a comment.',
           $this->renderHandleLink($author_phid));
       case PhabricatorTransactions::TYPE_VIEW_POLICY:
-        // TODO: Render human-readable.
         return pht(
           '%s changed the visibility of this %s from "%s" to "%s".',
           $this->renderHandleLink($author_phid),
           $this->getApplicationObjectTypeName(),
-          $old,
-          $new);
+          PhabricatorPolicy::newFromPolicyAndHandle(
+            $old,
+            $this->getHandleIfExists($old))->renderDescription(),
+          PhabricatorPolicy::newFromPolicyAndHandle(
+            $new,
+            $this->getHandleIfExists($new))->renderDescription());
       case PhabricatorTransactions::TYPE_EDIT_POLICY:
-        // TODO: Render human-readable.
         return pht(
           '%s changed the edit policy of this %s from "%s" to "%s".',
           $this->renderHandleLink($author_phid),
           $this->getApplicationObjectTypeName(),
-          $old,
-          $new);
+          PhabricatorPolicy::newFromPolicyAndHandle(
+            $old,
+            $this->getHandleIfExists($old))->renderDescription(),
+          PhabricatorPolicy::newFromPolicyAndHandle(
+            $new,
+            $this->getHandleIfExists($new))->renderDescription());
       case PhabricatorTransactions::TYPE_SUBSCRIBERS:
         $add = array_diff($new, $old);
         $rem = array_diff($old, $new);
@@ -279,11 +315,38 @@ abstract class PhabricatorApplicationTransaction
         }
         break;
       case PhabricatorTransactions::TYPE_EDGE:
+        $new = ipull($new, 'dst');
+        $old = ipull($old, 'dst');
+        $add = array_diff($new, $old);
+        $rem = array_diff($old, $new);
         $type = $this->getMetadata('edge:type');
-        return pht(
-          '%s edited edges of type %s.',
-          $this->renderHandleLink($author_phid),
-          $type);
+        $type = head($type);
+
+        if ($add && $rem) {
+          $string = PhabricatorEdgeConfig::getEditStringForEdgeType($type);
+          return pht(
+            $string,
+            $this->renderHandleLink($author_phid),
+            count($add),
+            $this->renderHandleList($add),
+            count($rem),
+            $this->renderHandleList($rem));
+        } else if ($add) {
+          $string = PhabricatorEdgeConfig::getAddStringForEdgeType($type);
+          return pht(
+            $string,
+            $this->renderHandleLink($author_phid),
+            count($add),
+            $this->renderHandleList($add));
+        } else {
+          $string = PhabricatorEdgeConfig::getRemoveStringForEdgeType($type);
+          return pht(
+            $string,
+            $this->renderHandleLink($author_phid),
+            count($rem),
+            $this->renderHandleList($rem));
+        }
+
       default:
         return pht(
           '%s edited this %s.',
@@ -321,13 +384,32 @@ abstract class PhabricatorApplicationTransaction
           $this->renderHandleLink($author_phid),
           $this->renderHandleLink($object_phid));
       case PhabricatorTransactions::TYPE_EDGE:
+        $type = $this->getMetadata('edge:type');
+        $type = head($type);
+        $string = PhabricatorEdgeConfig::getFeedStringForEdgeType($type);
         return pht(
-          '%s updated edges of %s.',
+          $string,
           $this->renderHandleLink($author_phid),
           $this->renderHandleLink($object_phid));
     }
 
     return $this->getTitle();
+  }
+
+  public function getBodyForFeed(PhabricatorFeedStory $story) {
+    $old = $this->getOldValue();
+    $new = $this->getNewValue();
+
+    $body = null;
+
+    switch ($this->getTransactionType()) {
+      case PhabricatorTransactions::TYPE_COMMENT:
+        $text = $this->getComment()->getContent();
+        $body = phutil_escape_html_newlines(
+          phutil_utf8_shorten($text, 128));
+        break;
+    }
+    return $body;
   }
 
   public function getActionStrength() {

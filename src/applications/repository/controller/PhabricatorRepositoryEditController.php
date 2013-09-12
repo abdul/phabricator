@@ -153,21 +153,20 @@ final class PhabricatorRepositoryEditController
         id(new AphrontFormSubmitControl())
           ->setValue('Save'));
 
-    $panel = new AphrontPanelView();
-    $panel->setHeader('Edit Repository');
-    $panel->appendChild($form);
-    $panel->setWidth(AphrontPanelView::WIDTH_FORM);
-    $panel->setNoBackground();
-
     $nav = $this->sideNav;
 
-    $nav->appendChild($error_view);
-    $nav->appendChild($panel);
+    $form_box = id(new PHUIFormBoxView())
+      ->setHeaderText(pht('Edit Repository'))
+      ->setFormError($error_view)
+      ->setForm($form);
 
-    return $this->buildStandardPageResponse(
+    $nav->appendChild($form_box);
+
+    return $this->buildApplicationPage(
       $nav,
       array(
-        'title' => 'Edit Repository',
+        'title' => pht('Edit Repository'),
+        'device' => true,
       ));
   }
 
@@ -675,20 +674,18 @@ final class PhabricatorRepositoryEditController
         id(new AphrontFormSubmitControl())
           ->setValue('Save Configuration'));
 
-    $panel = new AphrontPanelView();
-    $panel->setHeader('Repository Tracking');
-    $panel->appendChild($form);
-    $panel->setWidth(AphrontPanelView::WIDTH_WIDE);
-    $panel->setNoBackground();
+    $form_box = id(new PHUIFormBoxView())
+      ->setHeaderText(pht('Edit Repository Tracking'))
+      ->setFormError($error_view)
+      ->setForm($form);
 
     $nav = $this->sideNav;
-    $nav->appendChild($error_view);
-    $nav->appendChild($panel);
+    $nav->appendChild($form_box);
 
-    return $this->buildStandardPageResponse(
+    return $this->buildApplicationPage(
       $nav,
       array(
-        'title' => 'Edit Repository Tracking',
+        'title' => pht('Edit Repository Tracking'),
       ));
   }
 

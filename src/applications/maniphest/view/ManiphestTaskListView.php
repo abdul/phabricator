@@ -35,13 +35,13 @@ final class ManiphestTaskListView extends ManiphestView {
   public function render() {
     $handles = $this->handles;
 
-    $list = new PhabricatorObjectItemListView();
+    $list = new PHUIObjectItemListView();
     $list->setCards(true);
     $list->setFlush(true);
 
     $status_map = ManiphestTaskStatus::getTaskStatusMap();
     $color_map = array(
-      ManiphestTaskPriority::PRIORITY_UNBREAK_NOW => 'magenta',
+      ManiphestTaskPriority::PRIORITY_UNBREAK_NOW => 'indigo',
       ManiphestTaskPriority::PRIORITY_TRIAGE => 'violet',
       ManiphestTaskPriority::PRIORITY_HIGH => 'red',
       ManiphestTaskPriority::PRIORITY_NORMAL => 'orange',
@@ -49,15 +49,22 @@ final class ManiphestTaskListView extends ManiphestView {
       ManiphestTaskPriority::PRIORITY_WISH => 'sky',
     );
 
+    if ($this->showBatchControls) {
+      Javelin::initBehavior('maniphest-list-editor');
+    }
+
     foreach ($this->tasks as $task) {
-      $item = new PhabricatorObjectItemView();
+      $item = new PHUIObjectItemView();
       $item->setObjectName('T'.$task->getID());
       $item->setHeader($task->getTitle());
       $item->setHref('/T'.$task->getID());
 
       if ($task->getOwnerPHID()) {
-        $owner = $handles[$task->getOwnerPHID()];
-        $item->addByline(pht('Assigned: %s', $owner->renderLink()));
+        $owner = idx($handles, $task->getOwnerPHID());
+        // TODO: This should be guaranteed, see T3817.
+        if ($owner) {
+          $item->addByline(pht('Assigned: %s', $owner->renderLink()));
+        }
       }
 
       $status = $task->getStatus();
@@ -82,20 +89,26 @@ final class ManiphestTaskListView extends ManiphestView {
         $item->addSigil('maniphest-task');
       }
 
-      if ($task->getProjectPHIDs()) {
-        $projects_view = new ManiphestTaskProjectsView();
-        $projects_view->setHandles(
-          array_select_keys(
-            $handles,
-            $task->getProjectPHIDs()));
+      $projects_view = new ManiphestTaskProjectsView();
+      $projects_view->setHandles(
+        array_select_keys(
+          $handles,
+          $task->getProjectPHIDs()));
 
-        $item->addAttribute($projects_view);
-      }
+      $item->addAttribute($projects_view);
 
       $item->setMetadata(
         array(
           'taskID' => $task->getID(),
         ));
+
+      if ($this->showBatchControls) {
+        $item->addAction(
+          id(new PHUIListItemView())
+            ->setIcon('edit')
+            ->addSigil('maniphest-edit-task')
+            ->setHref('/maniphest/task/edit/'.$task->getID().'/'));
+      }
 
       $list->addItem($item);
     }

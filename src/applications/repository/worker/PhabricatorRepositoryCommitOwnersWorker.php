@@ -8,7 +8,9 @@ final class PhabricatorRepositoryCommitOwnersWorker
     PhabricatorRepositoryCommit $commit) {
 
     $affected_paths = PhabricatorOwnerPathQuery::loadAffectedPaths(
-      $repository, $commit);
+      $repository,
+      $commit,
+      PhabricatorUser::getOmnipotentUser());
     $affected_packages = PhabricatorOwnersPackage::loadAffectedPackages(
       $repository,
       $affected_paths);
@@ -92,7 +94,6 @@ final class PhabricatorRepositoryCommitOwnersWorker
     if ($revision_id) {
       $revision = id(new DifferentialRevision())->load($revision_id);
       if ($revision) {
-        $revision->loadRelationships();
         $revision_author_phid = $revision->getAuthorPHID();
         $revision_reviewedby_phid = $revision->loadReviewedBy();
         $commit_reviewedby_phid = $data->getCommitDetail('reviewerPHID');

@@ -24,7 +24,7 @@
 .phabricator-remarkup .remarkup-code-header {
   padding: .25em 1em;
   background: #edead7;
-  color: #444444;
+  color: {$darkgreytext};
 }
 
 .phabricator-remarkup .remarkup-code-block pre {
@@ -139,6 +139,10 @@
   padding:     .25em 1em;
 }
 
+.phabricator-remarkup blockquote em {
+  font-style: normal;
+}
+
 .phabricator-remarkup img.remarkup-proxy-image {
   max-width: 640px;
   max-height: 640px;
@@ -154,6 +158,7 @@
   background: #dddddd;
 }
 
+.phui-remarkup-preview .phabricator-remarkup-mention-unknown,
 .aphront-panel-preview .phabricator-remarkup-mention-unknown {
   font-weight: bold;
   background: #ffaaaa;
@@ -177,7 +182,7 @@
 
 .phabricator-remarkup-toc-header {
   font-size: 11px;
-  color: #777;
+  color: {$greytext};
   border-bottom: 1px solid #d7d7d7;
   margin-bottom: 4px;
 }
@@ -190,7 +195,7 @@
 }
 
 .phabricator-remarkup-toc ul ul {
-  margin-left: 0;
+  margin: 0 0 0 10px;
 }
 
 .phabricator-remarkup-toc ul li {
@@ -250,14 +255,20 @@
   padding: 3px 6px;
 }
 
-
 .remarkup-assist-textarea {
-  border-width: 1px;
-  border-color: #e5e5e5 #999999 #999999;
+  border-left-color: {$blueborder};
+  border-right-color: {$blueborder};
+  border-bottom-color: {$blueborder};
+  border-top-color: {$lightblueborder};
+  border-radius: 0;
 
   /* Prevent Safari and Chrome users from dragging the textarea any wider,
      because the top bar won't resize along with it. */
   resize: vertical;
+}
+
+.remarkup-assist-textarea:focus {
+  border: 1px solid rgba(82, 168, 236, 0.8);
 }
 
 .remarkup-assist-bar {
@@ -266,9 +277,11 @@
 
   border-width: 1px 1px 0;
   border-style: solid;
-  border-color: #737373 #999999;
+  border-top-color: {$blueborder};
+  border-left-color: {$blueborder};
+  border-right-color: {$blueborder};
 
-  background: #f5f5f5;
+  background: {$lightbluebackground};
   overflow: hidden;
 }
 
@@ -320,6 +333,36 @@
   float: right;
 }
 
+.jx-order-mask {
+  background: #ffffff;
+  opacity: 1.0;
+}
+
+.remarkup-assist-textarea {
+  box-shadow: none;
+  -webkit-box-shadow: none;
+}
+
+.remarkup-control-fullscreen-mode {
+  position: fixed;
+  top: -1px;
+  bottom: -1px;
+  left: -1px;
+  right: -1px;
+}
+
+.remarkup-control-fullscreen-mode textarea.remarkup-assist-textarea {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* NOTE: This doesn't work in Firefox, there's a JS behavior to correct it. */
+  height: auto;
+  border-width: 1px 0 0 0;
+  outline: none;
+}
+
 .phabricator-image-macro-hero {
   margin: auto;
   max-width: 95%;
@@ -329,12 +372,12 @@
    so here are custom rules to override remarkup defaults. */
 
 div.phabricator-remarkup-dark blockquote {
-  color: #999;
+  color: {$lightgreytext};
 }
 
 div.phabricator-remarkup-dark tt {
   color: #EEE;
-  background: #444;
+  background: {$darkgreytext};
 }
 
 div.phabricator-remarkup-dark .remarkup-note,

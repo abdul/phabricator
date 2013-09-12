@@ -32,25 +32,33 @@ class PhabricatorApplicationTransactionFeedStory
   }
 
   public function renderView() {
-    $view = new PhabricatorFeedStoryView();
-    $view->setViewed($this->getHasViewed());
+    $view = $this->newStoryView();
 
-    $href = $this->getHandle($this->getPrimaryObjectPHID())->getURI();
-    $view->setHref($view);
+    $handle = $this->getHandle($this->getPrimaryObjectPHID());
+    $view->setHref($handle->getURI());
+
+    $view->setAppIconFromPHID($handle->getPHID());
 
     $xaction_phids = $this->getValue('transactionPHIDs');
     $xaction = $this->getObject(head($xaction_phids));
 
     $xaction->setHandles($this->getHandles());
     $view->setTitle($xaction->getTitleForFeed());
-    $view->setOneLineStory(true);
+    $body = $xaction->getBodyForFeed($this);
+    if (nonempty($body)) {
+      $view->appendChild($body);
+    }
+
+    $view->setImage(
+      $this->getHandle(
+        $this->getPrimaryTransaction()->getAuthorPHID())->getImageURI());
 
     return $view;
   }
 
   public function renderText() {
     // TODO: This is grotesque; the feed notification handler relies on it.
-    return strip_tags($this->renderView()->render());
+    return strip_tags(hsprintf('%s', $this->renderView()->render()));
   }
 
 }

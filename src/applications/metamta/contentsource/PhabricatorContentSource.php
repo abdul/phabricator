@@ -9,6 +9,7 @@ final class PhabricatorContentSource {
   const SOURCE_MOBILE   = 'mobile';
   const SOURCE_TABLET   = 'tablet';
   const SOURCE_FAX      = 'fax';
+  const SOURCE_LEGACY   = 'legacy';
 
   private $source;
   private $params = array();
@@ -36,6 +37,20 @@ final class PhabricatorContentSource {
     $obj->params = idx($dict, 'params', array());
 
     return $obj;
+  }
+
+  public static function newFromRequest(AphrontRequest $request) {
+    return self::newForSource(
+      PhabricatorContentSource::SOURCE_WEB,
+      array(
+        'ip' => $request->getRemoteAddr(),
+      ));
+  }
+
+  public static function newFromConduitRequest(ConduitAPIRequest $request) {
+    return self::newForSource(
+      PhabricatorContentSource::SOURCE_CONDUIT,
+      array());
   }
 
   public function serialize() {

@@ -6,11 +6,12 @@ abstract class PhabricatorApplicationTransactionQuery
   private $phids;
   private $objectPHIDs;
   private $authorPHIDs;
+  private $transactionTypes;
 
   private $needComments = true;
   private $needHandles  = true;
 
-  abstract protected function getTemplateApplicationTransaction();
+  abstract public function getTemplateApplicationTransaction();
 
   protected function buildMoreWhereClauses(AphrontDatabaseConnection $conn_r) {
     return array();
@@ -32,6 +33,11 @@ abstract class PhabricatorApplicationTransactionQuery
 
   public function withAuthorPHIDs(array $author_phids) {
     $this->authorPHIDs = $author_phids;
+    return $this;
+  }
+
+  public function withTransactionTypes(array $transaction_types) {
+    $this->transactionTypes = $transaction_types;
     return $this;
   }
 
@@ -94,9 +100,10 @@ abstract class PhabricatorApplicationTransactionQuery
       $handles = array();
       $merged = array_mergev($phids);
       if ($merged) {
-        $handles = id(new PhabricatorObjectHandleData($merged))
+        $handles = id(new PhabricatorHandleQuery())
           ->setViewer($this->getViewer())
-          ->loadHandles();
+          ->withPHIDs($merged)
+          ->execute();
       }
       foreach ($xactions as $xaction) {
         $xaction->setHandles(
@@ -131,6 +138,13 @@ abstract class PhabricatorApplicationTransactionQuery
         $conn_r,
         'authorPHID IN (%Ls)',
         $this->authorPHIDs);
+    }
+
+    if ($this->transactionTypes) {
+      $where[] = qsprintf(
+        $conn_r,
+        'transactionType IN (%Ls)',
+        $this->transactionTypes);
     }
 
     foreach ($this->buildMoreWhereClauses($conn_r) as $clause) {

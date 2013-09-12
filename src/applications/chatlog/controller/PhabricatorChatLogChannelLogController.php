@@ -107,27 +107,36 @@ final class PhabricatorChatLogChannelLogController
       $author = phutil_utf8_shorten($author, 18);
       $author = phutil_tag('td', array('class' => 'author'), $author);
 
-      $message = mpull($block['logs'], 'getMessage');
-      $message = implode("\n", $message);
-      $message = phutil_tag('td', array('class' => 'message'), $message);
-
       $href = $uri->alter('at', $block['id']);
       $timestamp = $block['epoch'];
       $timestamp = phabricator_datetime($timestamp, $user);
-      $timestamp = phutil_tag('a', array('href' => $href), $timestamp);
       $timestamp = phutil_tag(
-        'td',
-        array(
-          'class' => 'timestamp',
-        ),
+        'a',
+          array(
+            'href' => $href,
+            'class' => 'timestamp'
+          ),
         $timestamp);
+
+      $message = mpull($block['logs'], 'getMessage');
+      $message = implode("\n", $message);
+      $message = phutil_tag(
+        'td',
+          array(
+            'class' => 'message'
+          ),
+          array(
+            $timestamp,
+            $message));
 
       $out[] = phutil_tag(
         'tr',
         array(
           'class' => $block['class'],
         ),
-        array($author, $message, $timestamp));
+        array(
+          $author,
+          $message));
     }
 
     $crumbs = $this
@@ -150,18 +159,40 @@ final class PhabricatorChatLogChannelLogController
         id(new AphrontFormSubmitControl())
           ->setValue(pht('Jump')));
 
+    $filter = new AphrontListFilterView();
+    $filter->appendChild($form);
 
-    return $this->buildStandardPageResponse(
+    $table = phutil_tag(
+      'table',
+        array(
+          'class' => 'phabricator-chat-log'
+        ),
+      $out);
+
+    $log = phutil_tag(
+      'div',
+        array(
+          'class' => 'phabricator-chat-log-panel'
+        ),
+        $table);
+
+    $content = phutil_tag(
+      'div',
+        array(
+          'class' => 'phabricator-chat-log-wrap'
+        ),
+        $log);
+
+    return $this->buildApplicationPage(
       array(
         $crumbs,
-        hsprintf(
-          '<div class="phabricator-chat-log-panel">%s<br />%s%s</div>',
-          $form->render(),
-          phutil_tag('table', array('class' => 'phabricator-chat-log'), $out),
-          $pager->render()),
+        $filter,
+        $content,
+        $pager,
       ),
       array(
         'title' => pht('Channel Log'),
+        'device' => true,
       ));
   }
 
@@ -199,13 +230,7 @@ final class PhabricatorChatLogChannelLogController
       );
 
     } else if ($at_date) {
-      $timezone = new DateTimeZone($user->getTimezoneIdentifier());
-      try {
-        $date = new DateTime($at_date, $timezone);
-        $timestamp = $date->format('U');
-      } catch (Exception $e) {
-        $timestamp = null;
-      }
+      $timestamp = PhabricatorTime::parseLocalTime($at_date, $user);
 
       if ($timestamp) {
         $context_logs = $query

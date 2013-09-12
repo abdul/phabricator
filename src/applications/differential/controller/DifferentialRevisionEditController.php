@@ -9,28 +9,36 @@ final class DifferentialRevisionEditController extends DifferentialController {
   }
 
   public function processRequest() {
-
     $request = $this->getRequest();
+    $viewer = $request->getUser();
 
     if (!$this->id) {
       $this->id = $request->getInt('revisionID');
     }
 
     if ($this->id) {
-      $revision = id(new DifferentialRevision())->load($this->id);
+      $revision = id(new DifferentialRevisionQuery())
+        ->setViewer($viewer)
+        ->withIDs(array($this->id))
+        ->needRelationships(true)
+        ->needReviewerStatus(true)
+        ->executeOne();
       if (!$revision) {
         return new Aphront404Response();
       }
     } else {
       $revision = new DifferentialRevision();
+      $revision->attachRelationships(array());
     }
 
-    $revision->loadRelationships();
     $aux_fields = $this->loadAuxiliaryFields($revision);
 
     $diff_id = $request->getInt('diffID');
     if ($diff_id) {
-      $diff = id(new DifferentialDiff())->load($diff_id);
+      $diff = id(new DifferentialDiffQuery())
+        ->setViewer($viewer)
+        ->withIDs(array($diff_id))
+        ->executeOne();
       if (!$diff) {
         return new Aphront404Response();
       }
@@ -56,6 +64,20 @@ final class DifferentialRevisionEditController extends DifferentialController {
       }
 
       if (!$errors) {
+        $is_new = !$revision->getID();
+        $user = $request->getUser();
+
+        $event = new PhabricatorEvent(
+          PhabricatorEventType::TYPE_DIFFERENTIAL_WILLEDITREVISION,
+            array(
+              'revision'      => $revision,
+              'new'           => $is_new,
+            ));
+
+        $event->setUser($user);
+        $event->setAphrontRequest($request);
+        PhutilEventEngine::dispatchEvent($event);
+
         $editor = new DifferentialRevisionEditor($revision);
         $editor->setActor($request->getUser());
         if ($diff) {
@@ -63,6 +85,16 @@ final class DifferentialRevisionEditController extends DifferentialController {
         }
         $editor->setAuxiliaryFields($aux_fields);
         $editor->save();
+
+        $event = new PhabricatorEvent(
+          PhabricatorEventType::TYPE_DIFFERENTIAL_DIDEDITREVISION,
+            array(
+              'revision'      => $revision,
+              'new'           => $is_new,
+            ));
+        $event->setUser($user);
+        $event->setAphrontRequest($request);
+        PhutilEventEngine::dispatchEvent($event);
 
         return id(new AphrontRedirectResponse())
           ->setURI('/D'.$revision->getID());
@@ -114,11 +146,13 @@ final class DifferentialRevisionEditController extends DifferentialController {
           id(new AphrontFormDividerControl()));
     }
 
+    $preview = array();
     foreach ($aux_fields as $aux_field) {
       $control = $aux_field->renderEditControl();
       if ($control) {
         $form->appendChild($control);
       }
+      $preview[] = $aux_field->renderEditPreview();
     }
 
     $submit = id(new AphrontFormSubmitControl())
@@ -131,25 +165,42 @@ final class DifferentialRevisionEditController extends DifferentialController {
 
     $form->appendChild($submit);
 
-    $panel = new AphrontPanelView();
+    $crumbs = $this->buildApplicationCrumbs();
     if ($revision->getID()) {
       if ($diff) {
-        $panel->setHeader(pht('Update Differential Revision'));
+        $title = pht('Update Differential Revision');
+        $crumbs->addCrumb(
+          id(new PhabricatorCrumbView())
+            ->setName('D'.$revision->getID())
+            ->setHref('/differential/diff/'.$diff->getID().'/'));
       } else {
-        $panel->setHeader(pht('Edit Differential Revision'));
+        $title = pht('Edit Differential Revision');
+        $crumbs->addCrumb(
+          id(new PhabricatorCrumbView())
+            ->setName('D'.$revision->getID())
+            ->setHref('/D'.$revision->getID()));
       }
     } else {
-      $panel->setHeader(pht('Create New Differential Revision'));
+      $title = pht('Create New Differential Revision');
     }
 
-    $panel->appendChild($form);
-    $panel->setWidth(AphrontPanelView::WIDTH_FORM);
-    $panel->setNoBackground();
+    $form_box = id(new PHUIFormBoxView())
+      ->setHeaderText($title)
+      ->setFormError($error_view)
+      ->setForm($form);
 
-    return $this->buildStandardPageResponse(
-      array($error_view, $panel),
+    $crumbs->addCrumb(
+      id(new PhabricatorCrumbView())
+        ->setName($title));
+
+    return $this->buildApplicationPage(
       array(
-        'title' => pht('Edit Differential Revision'),
+        $crumbs,
+        $form_box,
+        $preview),
+      array(
+        'title' => $title,
+        'device' => true,
       ));
   }
 

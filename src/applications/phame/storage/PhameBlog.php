@@ -21,8 +21,8 @@ final class PhameBlog extends PhameDAO
   protected $editPolicy;
   protected $joinPolicy;
 
-  private $bloggerPHIDs;
-  private $bloggers;
+  private $bloggerPHIDs = self::ATTACHABLE;
+  private $bloggers = self::ATTACHABLE;
 
   static private $requestBlog;
 
@@ -37,7 +37,7 @@ final class PhameBlog extends PhameDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_BLOG);
+      PhabricatorPhamePHIDTypeBlog::TYPECONST);
   }
 
   public function getSkinRenderer(AphrontRequest $request) {
@@ -93,51 +93,8 @@ final class PhameBlog extends PhameDAO
     return $valid;
   }
 
-  public function loadBloggerPHIDs() {
-    if (!$this->getPHID()) {
-      return $this;
-    }
-
-    if ($this->bloggerPHIDs) {
-      return $this;
-    }
-
-    $this->bloggerPHIDs = PhabricatorEdgeQuery::loadDestinationPHIDs(
-      $this->getPHID(),
-      PhabricatorEdgeConfig::TYPE_BLOG_HAS_BLOGGER);
-
-    return $this;
-  }
-
   public function getBloggerPHIDs() {
-    if ($this->bloggerPHIDs === null) {
-      throw new Exception(
-        'You must loadBloggerPHIDs before you can getBloggerPHIDs!'
-      );
-    }
-
-    return $this->bloggerPHIDs;
-  }
-
-  public function loadBloggers() {
-    if ($this->bloggers) {
-      return $this->bloggers;
-    }
-
-    $blogger_phids = $this->loadBloggerPHIDs()->getBloggerPHIDs();
-
-    if (empty($blogger_phids)) {
-      return array();
-    }
-
-    $bloggers = id(new PhabricatorObjectHandleData($blogger_phids))
-      // TODO: This should be Query-based (T603).
-      ->setViewer(PhabricatorUser::getOmnipotentUser())
-      ->loadHandles();
-
-    $this->attachBloggers($bloggers);
-
-    return $this;
+    return $this->assertAttached($this->bloggerPHIDs);
   }
 
   public function attachBloggers(array $bloggers) {
@@ -149,13 +106,7 @@ final class PhameBlog extends PhameDAO
   }
 
   public function getBloggers() {
-    if ($this->bloggers === null) {
-      throw new Exception(
-        'You must loadBloggers or attachBloggers before you can getBloggers!'
-      );
-    }
-
-    return $this->bloggers;
+    return $this->assertAttached($this->bloggers);
   }
 
   public function getSkin() {

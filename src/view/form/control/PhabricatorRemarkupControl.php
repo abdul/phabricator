@@ -54,8 +54,12 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
       ),
       'table' => array(
         'tip' => pht('Table'),
-      )
+      ),
+      'image' => array(
+        'tip' => pht('Upload File'),
+      ),
     );
+
     if (!$this->disableMacro and function_exists('imagettftext')) {
       $actions[] = array(
         'spacer' => true,
@@ -64,6 +68,7 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
         'tip' => pht('Meme'),
       );
     }
+
     $actions['help'] = array(
         'tip' => pht('Help'),
         'align' => 'right',
@@ -71,21 +76,36 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
           'article/Remarkup_Reference.html'),
       );
 
+    $actions[] = array(
+      'spacer' => true,
+      'align' => 'right',
+    );
+
+    $actions['fullscreen'] = array(
+      'tip' => pht('Fullscreen Mode'),
+      'align' => 'right',
+    );
+
     $buttons = array();
     foreach ($actions as $action => $spec) {
+
+      $classes = array();
+
+      if (idx($spec, 'align') == 'right') {
+        $classes[] = 'remarkup-assist-right';
+      }
+
       if (idx($spec, 'spacer')) {
+        $classes[] = 'remarkup-assist-separator';
         $buttons[] = phutil_tag(
           'span',
           array(
-            'class' => 'remarkup-assist-separator',
+            'class' => implode(' ', $classes),
           ),
           '');
         continue;
-      }
-      $classes = array();
-      $classes[] = 'remarkup-assist-button';
-      if (idx($spec, 'align') == 'right') {
-        $classes[] = 'remarkup-assist-right';
+      } else {
+        $classes[] = 'remarkup-assist-button';
       }
 
       $href = idx($spec, 'href', '#');
@@ -104,7 +124,7 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
         $meta['tip'] = $tip;
       }
 
-      require_celerity_resource('sprite-icon-css');
+      require_celerity_resource('sprite-icons-css');
 
       $buttons[] = javelin_tag(
         'a',
@@ -120,7 +140,7 @@ final class PhabricatorRemarkupControl extends AphrontFormTextAreaControl {
         phutil_tag(
           'div',
           array(
-            'class' => 'remarkup-assist sprite-icon remarkup-assist-'.$action,
+            'class' => 'remarkup-assist sprite-icons remarkup-assist-'.$action,
           ),
           ''));
     }

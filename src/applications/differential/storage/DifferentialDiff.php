@@ -1,6 +1,8 @@
 <?php
 
-final class DifferentialDiff extends DifferentialDAO {
+final class DifferentialDiff
+  extends DifferentialDAO
+  implements PhabricatorPolicyInterface {
 
   protected $revisionID;
   protected $authorPHID;
@@ -28,7 +30,7 @@ final class DifferentialDiff extends DifferentialDAO {
   protected $description;
 
   private $unsavedChangesets = array();
-  private $changesets;
+  private $changesets = self::ATTACHABLE;
 
   public function addUnsavedChangeset(DifferentialChangeset $changeset) {
     if ($this->changesets === null) {
@@ -46,10 +48,7 @@ final class DifferentialDiff extends DifferentialDAO {
   }
 
   public function getChangesets() {
-    if ($this->changesets === null) {
-      throw new Exception("Must load and attach changesets first!");
-    }
-    return $this->changesets;
+    return $this->assertAttached($this->changesets);
   }
 
   public function loadChangesets() {
@@ -114,6 +113,10 @@ final class DifferentialDiff extends DifferentialDAO {
   public static function newFromRawChanges(array $changes) {
     assert_instances_of($changes, 'ArcanistDiffChange');
     $diff = new DifferentialDiff();
+
+    // There may not be any changes; initialize the changesets list so that
+    // we don't throw later when accessing it.
+    $diff->attachChangesets(array());
 
     $lines = 0;
     foreach ($changes as $change) {
@@ -219,6 +222,7 @@ final class DifferentialDiff extends DifferentialDAO {
         );
       }
       $change = array(
+        'id'            => $changeset->getID(),
         'metadata'      => $changeset->getMetadata(),
         'oldPath'       => $changeset->getOldFile(),
         'currentPath'   => $changeset->getFilename(),
@@ -251,6 +255,24 @@ final class DifferentialDiff extends DifferentialDAO {
     }
 
     return $dict;
+  }
+
+
+/* -(  PhabricatorPolicyInterface  )----------------------------------------- */
+
+
+  public function getCapabilities() {
+    return array(
+      PhabricatorPolicyCapability::CAN_VIEW,
+    );
+  }
+
+  public function getPolicy($capability) {
+    return PhabricatorPolicies::POLICY_USER;
+  }
+
+  public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
+    return false;
   }
 
 }

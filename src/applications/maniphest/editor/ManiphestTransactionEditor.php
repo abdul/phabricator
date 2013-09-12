@@ -129,10 +129,11 @@ final class ManiphestTransactionEditor extends PhabricatorEditor {
             break;
           case ManiphestTransactionType::TYPE_OWNER:
             if ($new) {
-              $handles = id(new PhabricatorObjectHandleData(array($new)))
+              $handle = id(new PhabricatorHandleQuery())
                 ->setViewer($this->getActor())
-                ->loadHandles();
-              $task->setOwnerOrdering($handles[$new]->getName());
+                ->withPHIDs(array($new))
+                ->executeOne();
+              $task->setOwnerOrdering($handle->getName());
             } else {
               $task->setOwnerOrdering(null);
             }
@@ -226,9 +227,10 @@ final class ManiphestTransactionEditor extends PhabricatorEditor {
     }
     $phids = array_keys($phids);
 
-    $handles = id(new PhabricatorObjectHandleData($phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer($this->getActor())
-      ->loadHandles();
+      ->withPHIDs($phids)
+      ->execute();
 
     $view = new ManiphestTransactionDetailView();
     $view->setTransactionGroup($transactions);
@@ -438,5 +440,39 @@ final class ManiphestTransactionEditor extends PhabricatorEditor {
     return (double)(2 << 32);
   }
 
+  public static function addCC(
+    ManiphestTask $task,
+    PhabricatorUser $user) {
+    $current_ccs = $task->getCCPHIDs();
+    $new_ccs = array_merge($current_ccs, array($user->getPHID()));
 
+    $transaction = new ManiphestTransaction();
+    $transaction->setTaskID($task->getID());
+    $transaction->setAuthorPHID($user->getPHID());
+    $transaction->setTransactionType(ManiphestTransactionType::TYPE_CCS);
+    $transaction->setNewValue(array_unique($new_ccs));
+    $transaction->setOldValue($current_ccs);
+
+    id(new ManiphestTransactionEditor())
+      ->setActor($user)
+      ->applyTransactions($task, array($transaction));
+  }
+
+  public static function removeCC(
+    ManiphestTask $task,
+    PhabricatorUser $user) {
+    $current_ccs = $task->getCCPHIDs();
+    $new_ccs = array_diff($current_ccs, array($user->getPHID()));
+
+    $transaction = new ManiphestTransaction();
+    $transaction->setTaskID($task->getID());
+    $transaction->setAuthorPHID($user->getPHID());
+    $transaction->setTransactionType(ManiphestTransactionType::TYPE_CCS);
+    $transaction->setNewValue(array_unique($new_ccs));
+    $transaction->setOldValue($current_ccs);
+
+    id(new ManiphestTransactionEditor())
+      ->setActor($user)
+      ->applyTransactions($task, array($transaction));
+  }
 }

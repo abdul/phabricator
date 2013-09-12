@@ -38,6 +38,18 @@ final class ManiphestTaskEditController extends ManiphestController {
         if ($default_projects) {
           $task->setProjectPHIDs(explode(';', $default_projects));
         }
+
+        $task->setDescription($request->getStr('description'));
+
+        $assign = $request->getStr('assign');
+        if (strlen($assign)) {
+          $assign_user = id(new PhabricatorUser())->loadOneWhere(
+            'username = %s',
+            $assign);
+          if ($assign_user) {
+            $task->setOwnerPHID($assign_user->getPHID());
+          }
+        }
       }
 
       $file_phids = $request->getArr('files', array());
@@ -111,8 +123,15 @@ final class ManiphestTaskEditController extends ManiphestController {
         $errors[] = pht('Title is required.');
       }
 
-      foreach ($aux_fields as $aux_field) {
+      foreach ($aux_fields as $aux_arr_key => $aux_field) {
         $aux_field->setValueFromRequest($request);
+        $aux_key = $aux_field->getAuxiliaryKey();
+        $aux_old_value = $task->getAuxiliaryAttribute($aux_key);
+
+        if ((int)$aux_old_value === $aux_field->getValueForStorage()) {
+          unset($aux_fields[$aux_arr_key]);
+          continue;
+        }
 
         if ($aux_field->isRequired() && !$aux_field->getValue()) {
           $errors[] = pht('%s is required.', $aux_field->getLabel());
@@ -162,7 +181,7 @@ final class ManiphestTaskEditController extends ManiphestController {
           $file_map = mpull($files, 'getPHID');
           $file_map = array_fill_keys($file_map, array());
           $changes[ManiphestTransactionType::TYPE_ATTACH] = array(
-            PhabricatorPHIDConstants::PHID_TYPE_FILE => $file_map,
+            PhabricatorFilePHIDTypeFile::TYPECONST => $file_map,
           );
         }
 
@@ -240,6 +259,13 @@ final class ManiphestTaskEditController extends ManiphestController {
               $task->getPHID())
             ->save();
           $workflow = $parent_task->getID();
+        }
+
+        if ($request->isAjax()) {
+          return id(new AphrontAjaxResponse())->setContent(
+            array(
+              'tasks' => $this->renderSingleTask($task),
+            ));
         }
 
         $redirect_uri = '/T'.$task->getID();
@@ -354,11 +380,14 @@ final class ManiphestTaskEditController extends ManiphestController {
 
     $project_tokenizer_id = celerity_generate_unique_node_id();
 
-    $form = new AphrontFormView();
-    $form
-      ->setUser($user)
-      ->setAction($request->getRequestURI()->getPath())
-      ->addHiddenInput('template', $template_id);
+    if ($request->isAjax()) {
+      $form = new PHUIFormLayoutView();
+    } else {
+      $form = new AphrontFormView();
+      $form
+        ->setUser($user)
+        ->addHiddenInput('template', $template_id);
+    }
 
     if ($parent_task) {
       $form
@@ -484,13 +513,20 @@ final class ManiphestTaskEditController extends ManiphestController {
     $form
       ->appendChild($description_control);
 
-    if (!$task->getID()) {
-      $form
+
+    if ($request->isAjax()) {
+      $dialog = id(new AphrontDialogView())
+        ->setUser($user)
+        ->setWidth(AphrontDialogView::WIDTH_FULL)
+        ->setTitle($header_name)
         ->appendChild(
-          id(new AphrontFormDragAndDropUploadControl())
-            ->setLabel(pht('Attached Files'))
-            ->setName('files')
-            ->setActivatedClass('aphront-panel-view-drag-and-drop'));
+          array(
+            $error_view,
+            $form,
+          ))
+        ->addCancelButton($cancel_uri)
+        ->addSubmitButton($button_name);
+      return id(new AphrontDialogResponse())->setDialog($dialog);
     }
 
     $form
@@ -499,35 +535,15 @@ final class ManiphestTaskEditController extends ManiphestController {
           ->addCancelButton($cancel_uri)
           ->setValue($button_name));
 
-    $panel = new AphrontPanelView();
-    $panel->setWidth(AphrontPanelView::WIDTH_FULL);
-    $panel->setHeader($header_name);
-    $panel->appendChild($form);
-    $panel->setNoBackground();
-    $inst1 = pht('Description Preview');
-    $inst2 = pht('Loading preview...');
+    $form_box = id(new PHUIFormBoxView())
+      ->setHeaderText($header_name)
+      ->setFormError($error_view)
+      ->setForm($form);
 
-    $description_preview_panel = hsprintf(
-      '<div class="aphront-panel-preview aphront-panel-preview-full">
-        <div class="maniphest-description-preview-header">
-          %s
-        </div>
-        <div id="description-preview">
-          <div class="aphront-panel-preview-loading-text">
-            %s
-          </div>
-        </div>
-      </div>',
-      $inst1,
-      $inst2);
-
-    Javelin::initBehavior(
-      'maniphest-description-preview',
-      array(
-        'preview'   => 'description-preview',
-        'textarea'  => 'description-textarea',
-        'uri'       => '/maniphest/task/descriptionpreview/',
-      ));
+    $preview = id(new PHUIRemarkupPreviewPanel())
+      ->setHeader(pht('Description Preview'))
+      ->setControlID('description-textarea')
+      ->setPreviewURI($this->getApplicationURI('task/descriptionpreview/'));
 
     if ($task->getID()) {
       $page_objects = array( $task->getPHID() );
@@ -541,7 +557,7 @@ final class ManiphestTaskEditController extends ManiphestController {
         ->setName($header_name)
         ->setHref($this->getApplicationURI('/task/create/')))
       ->addAction(
-        id(new PhabricatorMenuItemView())
+        id(new PHUIListItemView())
           ->setHref($this->getApplicationURI('/task/create/'))
           ->setName(pht('Create Task'))
           ->setIcon('create'));
@@ -549,9 +565,8 @@ final class ManiphestTaskEditController extends ManiphestController {
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $error_view,
-        $panel,
-        $description_preview_panel,
+        $form_box,
+        $preview,
       ),
       array(
         'title' => $header_name,

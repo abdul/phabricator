@@ -4,7 +4,9 @@
  * @task uri Repository URI Management
  */
 final class PhabricatorRepository extends PhabricatorRepositoryDAO
-  implements PhabricatorPolicyInterface {
+  implements
+    PhabricatorPolicyInterface,
+    PhabricatorMarkupInterface {
 
   /**
    * Shortest hash we'll recognize in raw "a829f32" form.
@@ -33,6 +35,9 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
   private $sshKeyfile;
 
+  private $commitCount = self::ATTACHABLE;
+  private $mostRecentCommit = self::ATTACHABLE;
+
   public function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
@@ -44,7 +49,7 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_REPO);
+      PhabricatorRepositoryPHIDTypeRepository::TYPECONST);
   }
 
   public function toDictionary() {
@@ -69,14 +74,37 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     return $this;
   }
 
-  public function getDiffusionBrowseURIForPath($path,
-                                               $line = null,
-                                               $branch = null) {
+  public function attachCommitCount($count) {
+    $this->commitCount = $count;
+    return $this;
+  }
+
+  public function getCommitCount() {
+    return $this->assertAttached($this->commitCount);
+  }
+
+  public function attachMostRecentCommit(
+    PhabricatorRepositoryCommit $commit = null) {
+    $this->mostRecentCommit = $commit;
+    return $this;
+  }
+
+  public function getMostRecentCommit() {
+    return $this->assertAttached($this->mostRecentCommit);
+  }
+
+  public function getDiffusionBrowseURIForPath(
+    PhabricatorUser $user,
+    $path,
+    $line = null,
+    $branch = null) {
+
     $drequest = DiffusionRequest::newFromDictionary(
       array(
+        'user' => $user,
         'repository' => $this,
-        'path'       => $path,
-        'branch'     => $branch,
+        'path' => $path,
+        'branch' => $branch,
       ));
 
     return $drequest->generateURI(
@@ -88,6 +116,18 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
   public function getLocalPath() {
     return $this->getDetail('local-path');
+  }
+
+  public function getSubversionBaseURI() {
+    $vcs = $this->getVersionControlSystem();
+    if ($vcs != PhabricatorRepositoryType::REPOSITORY_TYPE_SVN) {
+      throw new Exception("Not a subversion repository!");
+    }
+
+    $uri = $this->getDetail('remote-uri');
+    $subpath = $this->getDetail('svn-subpath');
+
+    return $uri.$subpath;
   }
 
   public function execRemoteCommand($pattern /* , $arg, ... */) {
@@ -130,8 +170,8 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     $args = func_get_args();
     $args = $this->formatLocalCommand($args);
     return newv('ExecFuture', $args);
-
   }
+
   public function passthruLocalCommand($pattern /* , $arg, ... */) {
     $args = func_get_args();
     $args = $this->formatLocalCommand($args);
@@ -143,6 +183,8 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     $pattern = $args[0];
     $args = array_slice($args, 1);
 
+    $empty = $this->getEmptyReadableDirectoryPath();
+
     if ($this->shouldUseSSH()) {
       switch ($this->getVersionControlSystem()) {
         case PhabricatorRepositoryType::REPOSITORY_TYPE_SVN:
@@ -150,17 +192,18 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
           array_unshift(
             $args,
             csprintf(
-              'ssh -l %s -i %s',
-              $this->getSSHLogin(),
-              $this->getSSHKeyfile()));
+              'ssh -l %P -i %P',
+              new PhutilOpaqueEnvelope($this->getSSHLogin()),
+              new PhutilOpaqueEnvelope($this->getSSHKeyfile())));
           break;
         case PhabricatorRepositoryType::REPOSITORY_TYPE_GIT:
           $command = call_user_func_array(
             'csprintf',
             array_merge(
               array(
-                "(ssh-add %s && git {$pattern})",
-                $this->getSSHKeyfile(),
+                "(ssh-add %P && HOME=%s git {$pattern})",
+                new PhutilOpaqueEnvelope($this->getSSHKeyfile()),
+                $empty,
               ),
               $args));
           $pattern = "ssh-agent sh -c %s";
@@ -171,9 +214,9 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
           array_unshift(
             $args,
             csprintf(
-              'ssh -l %s -i %s',
-              $this->getSSHLogin(),
-              $this->getSSHKeyfile()));
+              'ssh -l %P -i %P',
+              new PhutilOpaqueEnvelope($this->getSSHLogin()),
+              new PhutilOpaqueEnvelope($this->getSSHKeyfile())));
           break;
         default:
           throw new Exception("Unrecognized version control system.");
@@ -186,13 +229,13 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
             "--non-interactive ".
             "--no-auth-cache ".
             "--trust-server-cert ".
-            "--username %s ".
-            "--password %s ".
+            "--username %P ".
+            "--password %P ".
             $pattern;
           array_unshift(
             $args,
-            $this->getDetail('http-login'),
-            $this->getDetail('http-pass'));
+            new PhutilOpaqueEnvelope($this->getDetail('http-login')),
+            new PhutilOpaqueEnvelope($this->getDetail('http-pass')));
           break;
         default:
           throw new Exception(
@@ -205,13 +248,13 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
               "svn ".
               "--non-interactive ".
               "--no-auth-cache ".
-              "--username %s ".
-              "--password %s ".
+              "--username %P ".
+              "--password %P ".
               $pattern;
             array_unshift(
               $args,
-              $this->getDetail('http-login'),
-              $this->getDetail('http-pass'));
+              new PhutilOpaqueEnvelope($this->getDetail('http-login')),
+              new PhutilOpaqueEnvelope($this->getDetail('http-pass')));
             break;
         default:
           throw new Exception(
@@ -223,7 +266,8 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
           $pattern = "svn --non-interactive {$pattern}";
           break;
         case PhabricatorRepositoryType::REPOSITORY_TYPE_GIT:
-          $pattern = "git {$pattern}";
+          $pattern = "HOME=%s git {$pattern}";
+          array_unshift($args, $empty);
           break;
         case PhabricatorRepositoryType::REPOSITORY_TYPE_MERCURIAL:
           $pattern = "hg {$pattern}";
@@ -242,17 +286,20 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     $pattern = $args[0];
     $args = array_slice($args, 1);
 
+    $empty = $this->getEmptyReadableDirectoryPath();
+
     switch ($this->getVersionControlSystem()) {
       case PhabricatorRepositoryType::REPOSITORY_TYPE_SVN:
         $pattern = "(cd %s && svn --non-interactive {$pattern})";
         array_unshift($args, $this->getLocalPath());
         break;
       case PhabricatorRepositoryType::REPOSITORY_TYPE_GIT:
-        $pattern = "(cd %s && git {$pattern})";
-        array_unshift($args, $this->getLocalPath());
+        $pattern = "(cd %s && HOME=%s git {$pattern})";
+        array_unshift($args, $this->getLocalPath(), $empty);
         break;
       case PhabricatorRepositoryType::REPOSITORY_TYPE_MERCURIAL:
-        $pattern = "(cd %s && HGPLAIN=1 hg {$pattern})";
+        $hgplain = (phutil_is_windows() ? "set HGPLAIN=1 &&" : "HGPLAIN=1");
+        $pattern = "(cd %s && {$hgplain} hg {$pattern})";
         array_unshift($args, $this->getLocalPath());
         break;
       default:
@@ -262,6 +309,17 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
     array_unshift($args, $pattern);
 
     return $args;
+  }
+
+  private function getEmptyReadableDirectoryPath() {
+    // See T2965. Some time after Git 1.7.5.4, Git started fataling if it can
+    // not read $HOME. For many users, $HOME points at /root (this seems to be
+    // a default result of Apache setup). Instead, explicitly point $HOME at a
+    // readable, empty directory so that Git looks for the config file it's
+    // after, fails to locate it, and moves on. This is really silly, but seems
+    // like the least damaging approach to mitigating the issue.
+    $root = dirname(phutil_get_library_root('phabricator'));
+    return $root.'/support/empty/';
   }
 
   private function getSSHLogin() {
@@ -634,6 +692,57 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
   }
 
 
+  /**
+   * Link external bug tracking system if defined.
+   *
+   * @param string Plain text.
+   * @param string Commit identifier.
+   * @return string Remarkup
+   */
+  public function linkBugtraq($message, $revision = null) {
+    $bugtraq_url = PhabricatorEnv::getEnvConfig('bugtraq.url');
+    list($bugtraq_re, $id_re) =
+      PhabricatorEnv::getEnvConfig('bugtraq.logregex') +
+      array('', '');
+
+    switch ($this->getVersionControlSystem()) {
+      case PhabricatorRepositoryType::REPOSITORY_TYPE_SVN:
+        // TODO: Get bugtraq:logregex and bugtraq:url from SVN properties.
+        break;
+    }
+
+    if (!$bugtraq_url || $bugtraq_re == '') {
+      return $message;
+    }
+
+    $matches = null;
+    $flags = PREG_SET_ORDER | PREG_OFFSET_CAPTURE;
+    preg_match_all('('.$bugtraq_re.')', $message, $matches, $flags);
+    foreach ($matches as $match) {
+      list($all, $all_offset) = array_shift($match);
+
+      if ($id_re != '') {
+        // Match substrings with bug IDs
+        preg_match_all('('.$id_re.')', $all, $match, PREG_OFFSET_CAPTURE);
+        list(, $match) = $match;
+      } else {
+        $all_offset = 0;
+      }
+
+      $match = array_reverse($match);
+      foreach ($match as $val) {
+        list($s, $offset) = $val;
+        $message = substr_replace(
+          $message,
+          '[[ '.str_replace('%BUGID%', $s, $bugtraq_url).' | '.$s.' ]]',
+          $offset + $all_offset,
+          strlen($s));
+      }
+    }
+
+    return $message;
+  }
+
 
 /* -(  PhabricatorPolicyInterface  )----------------------------------------- */
 
@@ -656,6 +765,40 @@ final class PhabricatorRepository extends PhabricatorRepositoryDAO
 
   public function hasAutomaticCapability($capability, PhabricatorUser $user) {
     return false;
+  }
+
+
+/* -(  PhabricatorMarkupInterface  )----------------------------------------- */
+
+
+  public function getMarkupFieldKey($field) {
+    $hash = PhabricatorHash::digestForIndex($this->getMarkupText($field));
+    return "repo:{$hash}";
+  }
+
+  public function newMarkupEngine($field) {
+    return PhabricatorMarkupEngine::newMarkupEngine(array());
+  }
+
+  public function getMarkupText($field) {
+    return $this->getDetail('description');
+  }
+
+  public function didMarkupText(
+    $field,
+    $output,
+    PhutilMarkupEngine $engine) {
+    require_celerity_resource('phabricator-remarkup-css');
+    return phutil_tag(
+      'div',
+      array(
+        'class' => 'phabricator-remarkup',
+      ),
+      $output);
+  }
+
+  public function shouldUseMarkupCache($field) {
+    return true;
   }
 
 }

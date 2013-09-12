@@ -189,7 +189,7 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
           }
         }
         foreach ($edges as $key => $edge) {
-          $edges[$key]['data'] = idx($data_map, $edge['dataID']);
+          $edges[$key]['data'] = idx($data_map, $edge['dataID'], array());
         }
       }
 
@@ -220,9 +220,10 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
    *
    *   // Gets all of the destinations.
    *   $all_phids = $query->getDestinationPHIDs();
-   *   $handles = id(new PhabricatorObjectHandleData($all_phids))
+   *   $handles = id(new PhabricatorHandleQuery())
    *     ->setViewer($viewer)
-   *     ->loadHandles();
+   *     ->withPHIDs($all_phids)
+   *     ->execute();
    *
    *   foreach ($objects as $object) {
    *     // Get all of the destinations for the given object.

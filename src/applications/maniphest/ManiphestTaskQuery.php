@@ -6,7 +6,8 @@
  *
  * @group maniphest
  */
-final class ManiphestTaskQuery extends PhabricatorQuery {
+final class ManiphestTaskQuery
+  extends PhabricatorCursorPagedPolicyAwareQuery {
 
   private $taskIDs             = array();
   private $taskPHIDs           = array();
@@ -32,7 +33,10 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
   const STATUS_SPITE        = 'status-spite';
   const STATUS_DUPLICATE    = 'status-duplicate';
 
+  private $statuses;
+
   private $priority         = null;
+  private $priorities;
 
   private $minPriority      = null;
   private $maxPriority      = null;
@@ -59,28 +63,18 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
   private $rowCount         = null;
 
   private $groupByProjectResults = null; // See comment at bottom for details
-  private $viewer;
-
-  public function setViewer(PhabricatorUser $viewer) {
-    $this->viewer = $viewer;
-    return $this;
-  }
-
-  public function getViewer() {
-    return $this->viewer;
-  }
 
   public function withAuthors(array $authors) {
     $this->authorPHIDs = $authors;
     return $this;
   }
 
-  public function withTaskIDs(array $ids) {
+  public function withIDs(array $ids) {
     $this->taskIDs = $ids;
     return $this;
   }
 
-  public function withTaskPHIDs(array $phids) {
+  public function withPHIDs(array $phids) {
     $this->taskPHIDs = $phids;
     return $this;
   }
@@ -88,7 +82,7 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
   public function withOwners(array $owners) {
     $this->includeUnowned = false;
     foreach ($owners as $k => $phid) {
-      if ($phid == ManiphestTaskOwner::OWNER_UP_FOR_GRABS) {
+      if ($phid == ManiphestTaskOwner::OWNER_UP_FOR_GRABS || $phid === null) {
         $this->includeUnowned = true;
         unset($owners[$k]);
         break;
@@ -120,8 +114,18 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     return $this;
   }
 
+  public function withStatuses(array $statuses) {
+    $this->statuses = $statuses;
+    return $this;
+  }
+
   public function withPriority($priority) {
     $this->priority = $priority;
+    return $this;
+  }
+
+  public function withPriorities(array $priorities) {
+    $this->priorities = $priorities;
     return $this;
   }
 
@@ -148,16 +152,6 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
 
   public function setOrderBy($order) {
     $this->orderBy = $order;
-    return $this;
-  }
-
-  public function setLimit($limit) {
-    $this->limit = $limit;
-    return $this;
-  }
-
-  public function setOffset($offset) {
-    $this->offset = $offset;
     return $this;
   }
 
@@ -189,13 +183,16 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     return $this;
   }
 
-  public function execute() {
-
+  public function loadPage() {
     $task_dao = new ManiphestTask();
     $conn = $task_dao->establishConnection('r');
 
     if ($this->calculateRows) {
       $calc = 'SQL_CALC_FOUND_ROWS';
+
+      // Make sure we end up in the right state if we throw a
+      // PhabricatorEmptyQueryException.
+      $this->rowCount = 0;
     } else {
       $calc = '';
     }
@@ -204,7 +201,9 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     $where[] = $this->buildTaskIDsWhereClause($conn);
     $where[] = $this->buildTaskPHIDsWhereClause($conn);
     $where[] = $this->buildStatusWhereClause($conn);
+    $where[] = $this->buildStatusesWhereClause($conn);
     $where[] = $this->buildPriorityWhereClause($conn);
+    $where[] = $this->buildPrioritiesWhereClause($conn);
     $where[] = $this->buildAuthorWhereClause($conn);
     $where[] = $this->buildOwnerWhereClause($conn);
     $where[] = $this->buildSubscriberWhereClause($conn);
@@ -253,19 +252,21 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
         count($this->projectPHIDs));
     }
 
-    $order = $this->buildOrderClause($conn);
+    $order = $this->buildCustomOrderClause($conn);
 
-    $offset = (int)nonempty($this->offset, 0);
-    $limit  = (int)nonempty($this->limit, self::DEFAULT_PAGE_SIZE);
+    // TODO: Clean up this nonstandardness.
+    if (!$this->getLimit()) {
+      $this->setLimit(self::DEFAULT_PAGE_SIZE);
+    }
 
     if ($this->groupBy == self::GROUP_PROJECT) {
-      $limit  = PHP_INT_MAX;
-      $offset = 0;
+      $this->setLimit(PHP_INT_MAX);
+      $this->setOffset(0);
     }
 
     $data = queryfx_all(
       $conn,
-      'SELECT %Q * %Q FROM %T task %Q %Q %Q %Q %Q LIMIT %d, %d',
+      'SELECT %Q * %Q FROM %T task %Q %Q %Q %Q %Q %Q',
       $calc,
       $count,
       $task_dao->getTableName(),
@@ -274,8 +275,7 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
       $group,
       $having,
       $order,
-      $offset,
-      $limit);
+      $this->buildLimitClause($conn));
 
     if ($this->calculateRows) {
       $count = queryfx_one(
@@ -346,6 +346,16 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     }
   }
 
+  private function buildStatusesWhereClause(AphrontDatabaseConnection $conn) {
+    if ($this->statuses) {
+      return qsprintf(
+        $conn,
+        'status IN (%Ld)',
+        $this->statuses);
+    }
+    return null;
+  }
+
   private function buildPriorityWhereClause(AphrontDatabaseConnection $conn) {
     if ($this->priority !== null) {
       return qsprintf(
@@ -362,6 +372,18 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
 
     return null;
   }
+
+  private function buildPrioritiesWhereClause(AphrontDatabaseConnection $conn) {
+    if ($this->priorities) {
+      return qsprintf(
+        $conn,
+        'priority IN (%Ld)',
+        $this->priorities);
+    }
+
+    return null;
+  }
+
 
   private function buildAuthorWhereClause(AphrontDatabaseConnection $conn) {
     if (!$this->authorPHIDs) {
@@ -489,10 +511,13 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     }
 
     $projects = id(new PhabricatorProjectQuery())
-      ->setViewer($this->viewer)
+      ->setViewer($this->getViewer())
       ->withMemberPHIDs($this->anyUserProjectPHIDs)
       ->execute();
     $any_user_project_phids = mpull($projects, 'getPHID');
+    if (!$any_user_project_phids) {
+      throw new PhabricatorEmptyQueryException();
+    }
 
     return qsprintf(
       $conn,
@@ -548,7 +573,7 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
       $subscriber_dao->getTableName());
   }
 
-  private function buildOrderClause(AphrontDatabaseConnection $conn) {
+  private function buildCustomOrderClause(AphrontDatabaseConnection $conn) {
     $order = array();
 
     switch ($this->groupBy) {
@@ -636,12 +661,10 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
       }
     }
 
-    // TODO: This should use the query's viewer once this class extends
-    // PhabricatorPolicyQuery (T603).
-
-    $handles = id(new PhabricatorObjectHandleData(array_keys($project_phids)))
-      ->setViewer(PhabricatorUser::getOmnipotentUser())
-      ->loadHandles();
+    $handles = id(new PhabricatorHandleQuery())
+      ->setViewer($this->getViewer())
+      ->withPHIDs(array_keys($project_phids))
+      ->execute();
 
     $max = 1;
     foreach ($handles as $handle) {
@@ -683,8 +706,8 @@ final class ManiphestTaskQuery extends PhabricatorQuery {
     $items = isort($items, 'seq');
     $items = array_slice(
       $items,
-      nonempty($this->offset),
-      nonempty($this->limit, self::DEFAULT_PAGE_SIZE));
+      nonempty($this->getOffset()),
+      nonempty($this->getLimit(), self::DEFAULT_PAGE_SIZE));
 
     $result = array();
     $projects = array();

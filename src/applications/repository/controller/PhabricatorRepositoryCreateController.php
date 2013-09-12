@@ -66,7 +66,6 @@ final class PhabricatorRepositoryCreateController
       $error_view->setTitle('Form Errors');
     }
 
-
     $form = new AphrontFormView();
     $form
       ->setUser($user)
@@ -102,19 +101,18 @@ final class PhabricatorRepositoryCreateController
           ->setValue('Create Repository')
           ->addCancelButton('/repository/'));
 
-    $panel = new AphrontPanelView();
-    $panel->setHeader('Create Repository');
-    $panel->appendChild($form);
-    $panel->setWidth(AphrontPanelView::WIDTH_FORM);
-    $panel->setNoBackground();
+    $form_box = id(new PHUIFormBoxView())
+      ->setHeaderText(pht('Create Repository'))
+      ->setFormError($error_view)
+      ->setForm($form);
 
-    return $this->buildStandardPageResponse(
+    return $this->buildApplicationPage(
       array(
-        $error_view,
-        $panel,
+        $form_box,
       ),
       array(
-        'title' => 'Create Repository',
+        'title' => pht('Create Repository'),
+        'device' => true,
       ));
   }
 

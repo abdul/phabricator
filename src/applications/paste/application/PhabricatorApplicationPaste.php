@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * group paste
+ */
 final class PhabricatorApplicationPaste extends PhabricatorApplication {
 
   public function getBaseURI() {
@@ -30,12 +33,13 @@ final class PhabricatorApplicationPaste extends PhabricatorApplication {
 
   public function getRoutes() {
     return array(
-      '/P(?P<id>[1-9]\d*)' => 'PhabricatorPasteViewController',
+      '/P(?P<id>[1-9]\d*)(?:\$(?P<lines>\d+(?:-\d+)?))?'
+        => 'PhabricatorPasteViewController',
       '/paste/' => array(
-        ''                        => 'PhabricatorPasteListController',
-        'create/'                 => 'PhabricatorPasteEditController',
-        'edit/(?P<id>[1-9]\d*)/'  => 'PhabricatorPasteEditController',
-        'filter/(?P<filter>\w+)/' => 'PhabricatorPasteListController',
+        '(query/(?P<queryKey>[^/]+)/)?' => 'PhabricatorPasteListController',
+        'create/'                       => 'PhabricatorPasteEditController',
+        'edit/(?P<id>[1-9]\d*)/'        => 'PhabricatorPasteEditController',
+        'comment/(?P<id>[1-9]\d*)/'     => 'PhabricatorPasteCommentController',
       ),
     );
   }

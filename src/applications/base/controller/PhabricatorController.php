@@ -52,7 +52,7 @@ abstract class PhabricatorController extends AphrontController {
         $user->getTableName(),
         'phabricator_session',
         'web-',
-        $phsid);
+        PhabricatorHash::digest($phsid));
       if ($info) {
         $user->loadFromArray($info);
       }
@@ -100,7 +100,9 @@ abstract class PhabricatorController extends AphrontController {
     }
 
     if ($this->shouldRequireLogin() && !$user->getPHID()) {
-      $login_controller = new PhabricatorLoginController($request);
+      $login_controller = new PhabricatorAuthStartController($request);
+      $this->setCurrentApplication(
+        PhabricatorApplication::getByClass('PhabricatorApplicationAuth'));
       return $this->delegateToController($login_controller);
     }
 
@@ -141,7 +143,7 @@ abstract class PhabricatorController extends AphrontController {
     if (!$this->getCurrentApplication()) {
       throw new Exception("No application!");
     }
-    return $this->getCurrentApplication()->getBaseURI().ltrim($path, '/');
+    return $this->getCurrentApplication()->getApplicationURI($path);
   }
 
   public function buildApplicationPage($view, array $options) {
@@ -166,16 +168,26 @@ abstract class PhabricatorController extends AphrontController {
       $view = $nav;
     }
 
-    $view->setUser($this->getRequest()->getUser());
+    $user = $this->getRequest()->getUser();
+    $view->setUser($user);
 
     $page->appendChild($view);
+
+    $object_phids = idx($options, 'pageObjects', array());
+    if ($object_phids) {
+      $page->appendPageObjects($object_phids);
+      foreach ($object_phids as $object_phid) {
+        PhabricatorFeedStoryNotification::updateObjectNotificationViews(
+          $user,
+          $object_phid);
+      }
+    }
 
     if (idx($options, 'device')) {
       $page->setDeviceReady(true);
     }
 
     $page->setShowChrome(idx($options, 'chrome', true));
-    $page->setDust(idx($options, 'dust', false));
 
     $application_menu = $this->buildApplicationMenu();
     if ($application_menu) {
@@ -217,6 +229,8 @@ abstract class PhabricatorController extends AphrontController {
         $response->setContent($view->render());
         return $response;
       } else {
+        $response->getDialog()->setIsStandalone(true);
+
         return id(new AphrontAjaxResponse())
           ->setContent(array(
             'dialog' => $response->buildResponseString(),
@@ -253,9 +267,10 @@ abstract class PhabricatorController extends AphrontController {
   }
 
   protected function loadViewerHandles(array $phids) {
-    return id(new PhabricatorObjectHandleData($phids))
+    return id(new PhabricatorHandleQuery())
       ->setViewer($this->getRequest()->getUser())
-      ->loadHandles();
+      ->withPHIDs($phids)
+      ->execute();
   }
 
 

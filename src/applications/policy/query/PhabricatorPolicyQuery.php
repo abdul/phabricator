@@ -100,22 +100,37 @@ final class PhabricatorPolicyQuery extends PhabricatorQuery {
     $other_policies = array_diff_key($other_policies, $results);
 
     if ($other_policies) {
-      $handles = id(new PhabricatorObjectHandleData($other_policies))
+      $handles = id(new PhabricatorHandleQuery())
         ->setViewer($this->viewer)
-        ->loadHandles();
+        ->withPHIDs($other_policies)
+        ->execute();
       foreach ($other_policies as $phid) {
-        $handle = $handles[$phid];
-        $results[$phid] = id(new PhabricatorPolicy())
-          ->setType(PhabricatorPolicyType::TYPE_MASKED)
-          ->setPHID($handle->getPHID())
-          ->setHref($handle->getLink())
-          ->setName($handle->getFullName());
+        $results[$phid] = PhabricatorPolicy::newFromPolicyAndHandle(
+          $phid,
+          $handles[$phid]);
       }
     }
 
     $results = msort($results, 'getSortKey');
 
     return $results;
+  }
+
+  public static function isGlobalPolicy($policy) {
+    $globalPolicies = self::getGlobalPolicies();
+
+    if (isset($globalPolicies[$policy])) {
+      return true;
+    }
+
+    return false;
+  }
+
+  public static function getGlobalPolicy($policy) {
+    if (!self::isGlobalPolicy($policy)) {
+      throw new Exception("Policy '{$policy}' is not a global policy!");
+    }
+    return idx(self::getGlobalPolicies(), $policy);
   }
 
   private static function getGlobalPolicies() {

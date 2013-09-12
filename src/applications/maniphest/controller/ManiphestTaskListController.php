@@ -124,7 +124,6 @@ final class ManiphestTaskListController extends ManiphestController {
 
     $form = id(new AphrontFormView())
       ->setUser($user)
-      ->setNoShading(true)
       ->setAction(
           $request->getRequestURI()
             ->alter('key', null)
@@ -180,7 +179,7 @@ final class ManiphestTaskListController extends ManiphestController {
       }
       $form->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource('/typeahead/common/authors/')
           ->setName('set_authors')
           ->setLabel(pht('Authors'))
           ->setValue($tokens));
@@ -416,7 +415,7 @@ final class ManiphestTaskListController extends ManiphestController {
         id(new PhabricatorCrumbView())
           ->setName($title))
       ->addAction(
-        id(new PhabricatorMenuItemView())
+        id(new PHUIListItemView())
           ->setHref($this->getApplicationURI('/task/create/'))
           ->setName(pht('Create Task'))
           ->setIcon('create'));
@@ -428,7 +427,6 @@ final class ManiphestTaskListController extends ManiphestController {
       array(
         'title' => $title,
         'device' => true,
-        'dust' => true,
       ));
   }
 
@@ -461,7 +459,8 @@ final class ManiphestTaskListController extends ManiphestController {
       ManiphestTaskPriority::getHighestPriority());
 
     $query = new ManiphestTaskQuery();
-    $query->withTaskIDs($task_ids);
+    $query->setViewer($viewer);
+    $query->withIDs($task_ids);
 
     if ($project_phids) {
       $query->withAllProjects($project_phids);
@@ -577,10 +576,12 @@ final class ManiphestTaskListController extends ManiphestController {
       $author_phids,
       $project_group_phids,
       $any_project_phids,
+      $any_user_project_phids,
       array_mergev(mpull($data, 'getProjectPHIDs')));
-    $handles = id(new PhabricatorObjectHandleData($handle_phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer($viewer)
-      ->loadHandles();
+      ->withPHIDs($handle_phids)
+      ->execute();
 
     switch ($search_query->getParameter('group')) {
       case 'priority':
@@ -633,7 +634,10 @@ final class ManiphestTaskListController extends ManiphestController {
         $grouped = array();
         foreach ($query->getGroupByProjectResults() as $project => $tasks) {
           foreach ($tasks as $task) {
-            $group = $project ? $handles[$project]->getName() : 'No Project';
+            $group = 'No Project';
+            if ($project && isset($handles[$project])) {
+              $group = $handles[$project]->getName();
+            }
             $grouped[$group][$task->getID()] = $task;
           }
         }

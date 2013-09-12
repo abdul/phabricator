@@ -41,18 +41,19 @@ final class PhabricatorTokenUIEventListener
 
     if (!$current) {
       $token_action = id(new PhabricatorActionView())
-        ->setUser($user)
         ->setWorkflow(true)
         ->setHref('/token/give/'.$object->getPHID().'/')
         ->setName(pht('Award Token'))
         ->setIcon('like');
     } else {
       $token_action = id(new PhabricatorActionView())
-        ->setUser($user)
         ->setWorkflow(true)
         ->setHref('/token/give/'.$object->getPHID().'/')
         ->setName(pht('Rescind Token'))
         ->setIcon('dislike');
+    }
+    if (!$user->isLoggedIn()) {
+      $token_action->setDisabled(true);
     }
 
     $actions = $event->getValue('actions');
@@ -92,9 +93,12 @@ final class PhabricatorTokenUIEventListener
     $tokens = mpull($tokens, null, 'getPHID');
 
     $author_phids = mpull($tokens_given, 'getAuthorPHID');
-    $handles = id(new PhabricatorObjectHandleData($author_phids))
+    $handles = id(new PhabricatorHandleQuery())
       ->setViewer($user)
-      ->loadHandles();
+      ->withPHIDs($author_phids)
+      ->execute();
+
+    Javelin::initBehavior('phabricator-tooltips');
 
     $list = array();
     foreach ($tokens_given as $token_given) {

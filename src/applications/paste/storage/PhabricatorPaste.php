@@ -1,7 +1,13 @@
 <?php
 
+/**
+ * @group paste
+ */
 final class PhabricatorPaste extends PhabricatorPasteDAO
-  implements PhabricatorPolicyInterface {
+  implements
+    PhabricatorSubscribableInterface,
+    PhabricatorTokenReceiverInterface,
+    PhabricatorPolicyInterface {
 
   protected $phid;
   protected $title;
@@ -10,9 +16,10 @@ final class PhabricatorPaste extends PhabricatorPasteDAO
   protected $language;
   protected $parentPHID;
   protected $viewPolicy;
+  protected $mailKey;
 
-  private $content;
-  private $rawContent;
+  private $content = self::ATTACHABLE;
+  private $rawContent = self::ATTACHABLE;
 
   public function getURI() {
     return '/P'.$this->getID();
@@ -26,7 +33,14 @@ final class PhabricatorPaste extends PhabricatorPasteDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorPHIDConstants::PHID_TYPE_PSTE);
+      PhabricatorPastePHIDTypePaste::TYPECONST);
+  }
+
+  public function save() {
+    if (!$this->getMailKey()) {
+      $this->setMailKey(Filesystem::readRandomCharacters(20));
+    }
+    return parent::save();
   }
 
   public function getCapabilities() {
@@ -56,10 +70,7 @@ final class PhabricatorPaste extends PhabricatorPasteDAO
   }
 
   public function getContent() {
-    if ($this->content === null) {
-      throw new Exception("Call attachContent() before getContent()!");
-    }
-    return $this->content;
+    return $this->assertAttached($this->content);
   }
 
   public function attachContent($content) {
@@ -68,15 +79,28 @@ final class PhabricatorPaste extends PhabricatorPasteDAO
   }
 
   public function getRawContent() {
-    if ($this->rawContent === null) {
-      throw new Exception("Call attachRawContent() before getRawContent()!");
-    }
-    return $this->rawContent;
+    return $this->assertAttached($this->rawContent);
   }
 
   public function attachRawContent($raw_content) {
     $this->rawContent = $raw_content;
     return $this;
+  }
+
+/* -(  PhabricatorSubscribableInterface Implementation  )-------------------- */
+
+
+  public function isAutomaticallySubscribed($phid) {
+    return ($this->authorPHID == $phid);
+  }
+
+
+/* -(  PhabricatorTokenReceiverInterface  )---------------------------------- */
+
+  public function getUsersToNotifyOfTokenGiven() {
+    return array(
+      $this->getAuthorPHID(),
+    );
   }
 
 }

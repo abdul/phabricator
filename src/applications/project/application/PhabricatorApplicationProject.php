@@ -26,10 +26,16 @@ final class PhabricatorApplicationProject extends PhabricatorApplication {
     return self::GROUP_ORGANIZATION;
   }
 
+  public function getRemarkupRules() {
+    return array(
+      new ProjectRemarkupRule(),
+    );
+  }
+
   public function getRoutes() {
     return array(
       '/project/' => array(
-        '' => 'PhabricatorProjectListController',
+        '(?:query/(?P<queryKey>[^/]+)/)?' => 'PhabricatorProjectListController',
         'filter/(?P<filter>[^/]+)/' => 'PhabricatorProjectListController',
         'edit/(?P<id>[1-9]\d*)/' => 'PhabricatorProjectProfileEditController',
         'members/(?P<id>[1-9]\d*)/'
