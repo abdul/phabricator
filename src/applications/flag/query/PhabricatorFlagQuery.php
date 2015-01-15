@@ -3,10 +3,14 @@
 final class PhabricatorFlagQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
+  const GROUP_COLOR = 'color';
+  const GROUP_NONE  = 'none';
+
   private $ownerPHIDs;
   private $types;
   private $objectPHIDs;
   private $colors;
+  private $groupBy = self::GROUP_NONE;
 
   private $needHandles;
   private $needObjects;
@@ -31,6 +35,16 @@ final class PhabricatorFlagQuery
     return $this;
   }
 
+  /**
+   * NOTE: this is done in PHP and not in MySQL, which means its inappropriate
+   * for large datasets. Pragmatically, this is fine for user flags which are
+   * typically well under 100 flags per user.
+   */
+  public function setGroupBy($group) {
+    $this->groupBy = $group;
+    return $this;
+  }
+
   public function needHandles($need) {
     $this->needHandles = $need;
     return $this;
@@ -51,8 +65,7 @@ final class PhabricatorFlagQuery
       ->executeOne();
   }
 
-
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhabricatorFlag();
     $conn_r = $table->establishConnection('r');
 
@@ -67,8 +80,7 @@ final class PhabricatorFlagQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $flags) {
-
+  protected function willFilterPage(array $flags) {
     if ($this->needObjects) {
       $objects = id(new PhabricatorObjectQuery())
         ->setViewer($this->getViewer())
@@ -94,6 +106,17 @@ final class PhabricatorFlagQuery
       foreach ($flags as $flag) {
         $flag->attachHandle($handles[$flag->getObjectPHID()]);
       }
+    }
+
+    switch ($this->groupBy) {
+      case self::GROUP_COLOR:
+        $flags = msort($flags, 'getColor');
+        break;
+      case self::GROUP_NONE:
+        break;
+      default:
+        throw new Exception("Unknown groupBy parameter: $this->groupBy");
+        break;
     }
 
     return $flags;
@@ -133,6 +156,10 @@ final class PhabricatorFlagQuery
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorFlagsApplication';
   }
 
 }

@@ -1,7 +1,14 @@
 <?php
 
-final class HeraldRuleSearchEngine
-  extends PhabricatorApplicationSearchEngine {
+final class HeraldRuleSearchEngine extends PhabricatorApplicationSearchEngine {
+
+  public function getResultTypeDescription() {
+    return pht('Herald Rules');
+  }
+
+  protected function getApplicationClassName() {
+    return 'PhabricatorHeraldApplication';
+  }
 
   public function buildSavedQueryFromRequest(AphrontRequest $request) {
     $saved = new PhabricatorSavedQuery();
@@ -12,6 +19,9 @@ final class HeraldRuleSearchEngine
 
     $saved->setParameter('contentType', $request->getStr('contentType'));
     $saved->setParameter('ruleType', $request->getStr('ruleType'));
+    $saved->setParameter(
+      'disabled',
+      $this->readBoolFromRequest($request, 'disabled'));
 
     return $saved;
   }
@@ -36,6 +46,11 @@ final class HeraldRuleSearchEngine
       $query->withRuleTypes(array($rule_type));
     }
 
+    $disabled = $saved->getParameter('disabled');
+    if ($disabled !== null) {
+      $query->withDisabled($disabled);
+    }
+
     return $query;
   }
 
@@ -44,11 +59,10 @@ final class HeraldRuleSearchEngine
     PhabricatorSavedQuery $saved_query) {
 
     $phids = $saved_query->getParameter('authorPHIDs', array());
-    $handles = id(new PhabricatorHandleQuery())
+    $author_handles = id(new PhabricatorHandleQuery())
       ->setViewer($this->requireViewer())
       ->withPHIDs($phids)
       ->execute();
-    $author_tokens = mpull($handles, 'getFullName', 'getPHID');
 
     $content_type = $saved_query->getParameter('contentType');
     $rule_type = $saved_query->getParameter('ruleType');
@@ -56,10 +70,10 @@ final class HeraldRuleSearchEngine
     $form
       ->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource(new PhabricatorPeopleDatasource())
           ->setName('authors')
           ->setLabel(pht('Authors'))
-          ->setValue($author_tokens))
+          ->setValue($author_handles))
       ->appendChild(
         id(new AphrontFormSelectControl())
           ->setName('contentType')
@@ -71,37 +85,52 @@ final class HeraldRuleSearchEngine
           ->setName('ruleType')
           ->setLabel(pht('Rule Type'))
           ->setValue($rule_type)
-          ->setOptions($this->getRuleTypeOptions()));
+          ->setOptions($this->getRuleTypeOptions()))
+      ->appendChild(
+        id(new AphrontFormSelectControl())
+          ->setName('disabled')
+          ->setLabel(pht('Rule Status'))
+          ->setValue($this->getBoolFromQuery($saved_query, 'disabled'))
+          ->setOptions(
+            array(
+              '' => pht('Show Enabled and Disabled Rules'),
+              'false' => pht('Show Only Enabled Rules'),
+              'true' => pht('Show Only Disabled Rules'),
+            )));
   }
 
   protected function getURI($path) {
     return '/herald/'.$path;
   }
 
-  public function getBuiltinQueryNames() {
+  protected function getBuiltinQueryNames() {
     $names = array();
 
     if ($this->requireViewer()->isLoggedIn()) {
       $names['authored'] = pht('Authored');
     }
 
+    $names['active'] = pht('Active');
     $names['all'] = pht('All');
 
     return $names;
   }
 
   public function buildSavedQueryFromBuiltin($query_key) {
-
     $query = $this->newSavedQuery();
     $query->setQueryKey($query_key);
+
+    $viewer_phid = $this->requireViewer()->getPHID();
 
     switch ($query_key) {
       case 'all':
         return $query;
+      case 'active':
+        return $query->setParameter('disabled', false);
       case 'authored':
-        return $query->setParameter(
-          'authorPHIDs',
-          array($this->requireViewer()->getPHID()));
+        return $query
+          ->setParameter('authorPHIDs', array($viewer_phid))
+          ->setParameter('disabled', false);
     }
 
     return parent::buildSavedQueryFromBuiltin($query_key);
@@ -110,11 +139,13 @@ final class HeraldRuleSearchEngine
   private function getContentTypeOptions() {
     return array(
       '' => pht('(All Content Types)'),
-    ) + HeraldAdapter::getEnabledAdapterMap();
+    ) + HeraldAdapter::getEnabledAdapterMap($this->requireViewer());
   }
 
   private function getContentTypeValues() {
-    return array_fuse(array_keys(HeraldAdapter::getEnabledAdapterMap()));
+    return array_fuse(
+      array_keys(
+        HeraldAdapter::getEnabledAdapterMap($this->requireViewer())));
   }
 
   private function getRuleTypeOptions() {
@@ -125,6 +156,63 @@ final class HeraldRuleSearchEngine
 
   private function getRuleTypeValues() {
     return array_fuse(array_keys(HeraldRuleTypeConfig::getRuleTypeMap()));
+  }
+
+  protected function getRequiredHandlePHIDsForResultList(
+    array $rules,
+    PhabricatorSavedQuery $query) {
+
+    return mpull($rules, 'getAuthorPHID');
+  }
+
+  protected function renderResultList(
+    array $rules,
+    PhabricatorSavedQuery $query,
+    array $handles) {
+    assert_instances_of($rules, 'HeraldRule');
+
+    $viewer = $this->requireViewer();
+
+    $content_type_map = HeraldAdapter::getEnabledAdapterMap($viewer);
+
+    $list = id(new PHUIObjectItemListView())
+      ->setUser($viewer);
+    foreach ($rules as $rule) {
+      $id = $rule->getID();
+
+      $item = id(new PHUIObjectItemView())
+        ->setObjectName("H{$id}")
+        ->setHeader($rule->getName())
+        ->setHref($this->getApplicationURI("rule/{$id}/"));
+
+      if ($rule->isPersonalRule()) {
+        $item->addIcon('fa-user', pht('Personal Rule'));
+        $item->addByline(
+          pht(
+            'Authored by %s',
+            $handles[$rule->getAuthorPHID()]->renderLink()));
+      } else {
+        $item->addIcon('fa-globe', pht('Global Rule'));
+      }
+
+      if ($rule->getIsDisabled()) {
+        $item->setDisabled(true);
+        $item->addIcon('fa-lock grey', pht('Disabled'));
+      }
+
+      $item->addAction(
+        id(new PHUIListItemView())
+          ->setHref($this->getApplicationURI("history/{$id}/"))
+          ->setIcon('fa-file-text-o')
+          ->setName(pht('Edit Log')));
+
+      $content_type_name = idx($content_type_map, $rule->getContentType());
+      $item->addAttribute(pht('Affects: %s', $content_type_name));
+
+      $list->addItem($item);
+    }
+
+    return $list;
   }
 
 }

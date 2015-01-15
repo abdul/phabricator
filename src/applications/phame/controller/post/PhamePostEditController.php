@@ -1,10 +1,6 @@
 <?php
 
-/**
- * @group phame
- */
-final class PhamePostEditController
-  extends PhameController {
+final class PhamePostEditController extends PhameController {
 
   private $id;
 
@@ -36,17 +32,17 @@ final class PhamePostEditController
       $blog = id(new PhameBlogQuery())
         ->setViewer($user)
         ->withIDs(array($request->getInt('blog')))
+        ->requireCapabilities(
+          array(
+            PhabricatorPolicyCapability::CAN_VIEW,
+            PhabricatorPolicyCapability::CAN_JOIN,
+          ))
         ->executeOne();
       if (!$blog) {
         return new Aphront404Response();
       }
 
-      $post = id(new PhamePost())
-        ->setBloggerPHID($user->getPHID())
-        ->setBlogPHID($blog->getPHID())
-        ->setBlog($blog)
-        ->setDatePublished(0)
-        ->setVisibility(PhamePost::VISIBILITY_DRAFT);
+      $post = PhamePost::initializePost($user, $blog);
       $cancel_uri = $this->getApplicationURI('/blog/view/'.$blog->getID().'/');
 
       $submit_button = pht('Save Draft');
@@ -86,7 +82,7 @@ final class PhamePostEditController
 
           $uri = $this->getApplicationURI('/post/view/'.$post->getID().'/');
           return id(new AphrontRedirectResponse())->setURI($uri);
-        } catch (AphrontQueryDuplicateKeyException $e) {
+        } catch (AphrontDuplicateKeyQueryException $e) {
           $e_phame_title = pht('Not Unique');
           $errors[]      = pht('Another post already uses this slug. '.
                            'Each post must have a unique slug.');
@@ -95,7 +91,7 @@ final class PhamePostEditController
     }
 
     $handle = id(new PhabricatorHandleQuery())
-      ->withViewer($user)
+      ->setViewer($user)
       ->withPHIDs(array($post->getBlogPHID()))
       ->executeOne();
 
@@ -143,17 +139,14 @@ final class PhamePostEditController
         ->addCancelButton($cancel_uri)
         ->setValue($submit_button));
 
-    $preview_panel = hsprintf(
-      '<div class="aphront-panel-preview">
-         <div class="phame-post-preview-header">
-           Post Preview
-         </div>
-         <div id="post-preview">
-           <div class="aphront-panel-preview-loading-text">
-             Loading preview...
-           </div>
-         </div>
-       </div>');
+    $loading = phutil_tag_div(
+      'aphront-panel-preview-loading-text',
+      pht('Loading preview...'));
+
+    $preview_panel = phutil_tag_div('aphront-panel-preview', array(
+      phutil_tag_div('phame-post-preview-header', pht('Post Preview')),
+      phutil_tag('div', array('id' => 'post-preview'), $loading),
+    ));
 
     require_celerity_resource('phame-css');
     Javelin::initBehavior(
@@ -166,24 +159,15 @@ final class PhamePostEditController
         'uri'         => '/phame/post/preview/',
       ));
 
-    if ($errors) {
-      $error_view = id(new AphrontErrorView())
-        ->setTitle(pht('Errors saving post.'))
-        ->setErrors($errors);
-    } else {
-      $error_view = null;
-    }
-
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($page_title)
-      ->setFormError($error_view)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($page_title)
-        ->setHref($this->getApplicationURI('/post/view/'.$this->id.'/')));
+    $crumbs->addTextCrumb(
+      $page_title,
+      $this->getApplicationURI('/post/view/'.$this->id.'/'));
 
     $nav = $this->renderSideNavFilterView(null);
     $nav->appendChild(
@@ -197,7 +181,6 @@ final class PhamePostEditController
       $nav,
       array(
         'title' => $page_title,
-        'device' => true,
       ));
   }
 

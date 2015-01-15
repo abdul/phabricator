@@ -6,6 +6,10 @@ final class ReleephRequestSearchEngine
   private $branch;
   private $baseURI;
 
+  public function getResultTypeDescription() {
+    return pht('Releeph Pull Requests');
+  }
+
   public function setBranch(ReleephBranch $branch) {
     $this->branch = $branch;
     return $this;
@@ -60,11 +64,10 @@ final class ReleephRequestSearchEngine
     PhabricatorSavedQuery $saved_query) {
 
     $phids = $saved_query->getParameter('requestorPHIDs', array());
-    $handles = id(new PhabricatorHandleQuery())
+    $requestor_handles = id(new PhabricatorHandleQuery())
       ->setViewer($this->requireViewer())
       ->withPHIDs($phids)
       ->execute();
-    $requestor_tokens = mpull($handles, 'getFullName', 'getPHID');
 
     $form
       ->appendChild(
@@ -81,17 +84,17 @@ final class ReleephRequestSearchEngine
           ->setOptions($this->getSeverityOptions()))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource(new PhabricatorPeopleDatasource())
           ->setName('requestors')
           ->setLabel(pht('Requestors'))
-          ->setValue($requestor_tokens));
+          ->setValue($requestor_handles));
   }
 
   protected function getURI($path) {
     return $this->baseURI.$path;
   }
 
-  public function getBuiltinQueryNames() {
+  protected function getBuiltinQueryNames() {
     $names = array(
       'open' => pht('Open Requests'),
       'all' => pht('All Requests'),

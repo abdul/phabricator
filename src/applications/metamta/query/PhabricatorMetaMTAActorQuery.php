@@ -33,13 +33,13 @@ final class PhabricatorMetaMTAActorQuery extends PhabricatorQuery {
 
     foreach ($type_map as $type => $phids) {
       switch ($type) {
-        case PhabricatorPeoplePHIDTypeUser::TYPECONST:
+        case PhabricatorPeopleUserPHIDType::TYPECONST:
           $this->loadUserActors($actors, $phids);
           break;
-        case PhabricatorPeoplePHIDTypeExternal::TYPECONST:
+        case PhabricatorPeopleExternalPHIDType::TYPECONST:
           $this->loadExternalUserActors($actors, $phids);
           break;
-        case PhabricatorMailingListPHIDTypeList::TYPECONST:
+        case PhabricatorMailingListListPHIDType::TYPECONST:
           $this->loadMailingListActors($actors, $phids);
           break;
         default:
@@ -82,6 +82,11 @@ final class PhabricatorMetaMTAActorQuery extends PhabricatorQuery {
           $actor->setUndeliverable(
             pht('This user is a bot; bot accounts do not receive mail.'));
         }
+
+        // NOTE: We do send email to unapproved users, and to unverified users,
+        // because it would otherwise be impossible to get them to verify their
+        // email addresses. Possibly we should white-list this kind of mail and
+        // deny all other types of mail.
       }
 
       $email = idx($emails, $phid);
@@ -172,7 +177,8 @@ final class PhabricatorMetaMTAActorQuery extends PhabricatorQuery {
         $name = $user->getUserName();
         break;
       case 'real':
-        $name = $user->getRealName();
+        $name = strlen($user->getRealName()) ?
+          $user->getRealName() : $user->getUserName();
         break;
       case 'full':
       default:

@@ -13,6 +13,18 @@
   border-width:         0px;
 }
 
+.phabricator-standard-page-footer {
+  text-align: right;
+  margin: 4px 16px;
+  padding: 12px 0;
+  border-top: 1px solid {$lightgreyborder};
+  color: {$greytext};
+}
+
+.device-desktop .has-local-nav + .phabricator-standard-page-footer {
+  margin-left: 221px;
+}
+
 .keyboard-shortcut-help td,
 .keyboard-shortcut-help th {
   padding: 8px;
@@ -94,4 +106,9 @@ a.handle-disabled {
   position: relative;
   padding: 8px 16px;
   background: {$lightyellow};
+}
+
+.phui-handle .phui-icon-view {
+  display: inline-block;
+  margin: 2px 2px -2px 0;
 }

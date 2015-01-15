@@ -17,7 +17,6 @@ final class PhabricatorFeedQuery
   }
 
   protected function loadPage() {
-
     $story_table = new PhabricatorFeedStoryData();
     $conn = $story_table->establishConnection('r');
 
@@ -102,6 +101,10 @@ final class PhabricatorFeedQuery
       return $item->getChronologicalKey();
     }
     return $item['chronologicalKey'];
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorFeedApplication';
   }
 
 }

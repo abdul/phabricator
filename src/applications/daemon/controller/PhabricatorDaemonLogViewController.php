@@ -16,6 +16,7 @@ final class PhabricatorDaemonLogViewController
     $log = id(new PhabricatorDaemonLogQuery())
       ->setViewer($user)
       ->withIDs(array($this->id))
+      ->setAllowStatusWrites(true)
       ->executeOne();
     if (!$log) {
       return new Aphront404Response();
@@ -26,41 +27,51 @@ final class PhabricatorDaemonLogViewController
       $log->getID());
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Daemon %s', $log->getID())));
+    $crumbs->addTextCrumb(pht('Daemon %s', $log->getID()));
 
-    $header = id(new PhabricatorHeaderView())
+    $header = id(new PHUIHeaderView())
       ->setHeader($log->getDaemon());
 
-    $tag = id(new PhabricatorTagView())
-      ->setType(PhabricatorTagView::TYPE_STATE);
+    $tag = id(new PHUITagView())
+      ->setType(PHUITagView::TYPE_STATE);
 
     $status = $log->getStatus();
     switch ($status) {
       case PhabricatorDaemonLog::STATUS_UNKNOWN:
-        $tag->setBackgroundColor(PhabricatorTagView::COLOR_ORANGE);
+        $tag->setBackgroundColor(PHUITagView::COLOR_ORANGE);
         $tag->setName(pht('Unknown'));
         break;
       case PhabricatorDaemonLog::STATUS_RUNNING:
-        $tag->setBackgroundColor(PhabricatorTagView::COLOR_GREEN);
+        $tag->setBackgroundColor(PHUITagView::COLOR_GREEN);
         $tag->setName(pht('Running'));
         break;
       case PhabricatorDaemonLog::STATUS_DEAD:
-        $tag->setBackgroundColor(PhabricatorTagView::COLOR_RED);
+        $tag->setBackgroundColor(PHUITagView::COLOR_RED);
         $tag->setName(pht('Dead'));
         break;
       case PhabricatorDaemonLog::STATUS_WAIT:
-        $tag->setBackgroundColor(PhabricatorTagView::COLOR_BLUE);
+        $tag->setBackgroundColor(PHUITagView::COLOR_BLUE);
         $tag->setName(pht('Waiting'));
         break;
+      case PhabricatorDaemonLog::STATUS_EXITING:
+        $tag->setBackgroundColor(PHUITagView::COLOR_YELLOW);
+        $tag->setName(pht('Exiting'));
+        break;
       case PhabricatorDaemonLog::STATUS_EXITED:
-        $tag->setBackgroundColor(PhabricatorTagView::COLOR_GREY);
+        $tag->setBackgroundColor(PHUITagView::COLOR_GREY);
         $tag->setName(pht('Exited'));
         break;
     }
 
     $header->addTag($tag);
+    $env_hash = PhabricatorEnv::calculateEnvironmentHash();
+    if ($log->getEnvHash() != $env_hash) {
+      $tag = id(new PHUITagView())
+        ->setType(PHUITagView::TYPE_STATE)
+        ->setBackgroundColor(PHUITagView::COLOR_YELLOW)
+        ->setName(pht('Stale Config'));
+      $header->addTag($tag);
+    }
 
     $properties = $this->buildPropertyListView($log);
 
@@ -72,15 +83,19 @@ final class PhabricatorDaemonLogViewController
     $event_panel->setNoBackground();
     $event_panel->appendChild($event_view);
 
+    $object_box = id(new PHUIObjectBoxView())
+      ->setHeader($header)
+      ->addPropertyList($properties);
+
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $header,
-        $properties,
+        $object_box,
         $event_panel,
       ),
       array(
         'title' => pht('Daemon Log'),
+        'device' => false,
       ));
   }
 
@@ -88,7 +103,7 @@ final class PhabricatorDaemonLogViewController
     $request = $this->getRequest();
     $viewer = $request->getUser();
 
-    $view = id(new PhabricatorPropertyListView())
+    $view = id(new PHUIPropertyListView())
       ->setUser($viewer);
 
     $id = $daemon->getID();
@@ -106,14 +121,14 @@ final class PhabricatorDaemonLogViewController
         $details = pht(
           'This daemon is running normally and reported a status update '.
           'recently (within %s).',
-          phabricator_format_relative_time($unknown_time));
+          phutil_format_relative_time($unknown_time));
         break;
       case PhabricatorDaemonLog::STATUS_UNKNOWN:
         $details = pht(
           'This daemon has not reported a status update recently (within %s). '.
           'It may have exited abruptly. After %s, it will be presumed dead.',
-          phabricator_format_relative_time($unknown_time),
-          phabricator_format_relative_time($dead_time));
+          phutil_format_relative_time($unknown_time),
+          phutil_format_relative_time($dead_time));
         break;
       case PhabricatorDaemonLog::STATUS_DEAD:
         $details = pht(
@@ -121,7 +136,7 @@ final class PhabricatorDaemonLogViewController
           'presumed dead. Usually, this indicates that the daemon was '.
           'killed or otherwise exited abruptly with an error. You may '.
           'need to restart it.',
-          phabricator_format_relative_time($dead_time));
+          phutil_format_relative_time($dead_time));
         break;
       case PhabricatorDaemonLog::STATUS_WAIT:
         $details = pht(
@@ -130,8 +145,12 @@ final class PhabricatorDaemonLogViewController
           'doing work and is waiting a little while (%s) to resume '.
           'processing. After encountering an error, daemons wait before '.
           'resuming work to avoid overloading services.',
-          phabricator_format_relative_time($unknown_time),
-          phabricator_format_relative_time($wait_time));
+          phutil_format_relative_time($unknown_time),
+          phutil_format_relative_time($wait_time));
+        break;
+      case PhabricatorDaemonLog::STATUS_EXITING:
+        $details = pht(
+          'This daemon is shutting down gracefully.');
         break;
       case PhabricatorDaemonLog::STATUS_EXITED:
         $details = pht(
@@ -144,12 +163,13 @@ final class PhabricatorDaemonLogViewController
     $view->addProperty(pht('Daemon Class'), $daemon->getDaemon());
     $view->addProperty(pht('Host'), $daemon->getHost());
     $view->addProperty(pht('PID'), $daemon->getPID());
+    $view->addProperty(pht('Running as'), $daemon->getRunningAsUser());
     $view->addProperty(pht('Started'), phabricator_datetime($c_epoch, $viewer));
     $view->addProperty(
       pht('Seen'),
       pht(
         '%s ago (%s)',
-        phabricator_format_relative_time(time() - $u_epoch),
+        phutil_format_relative_time(time() - $u_epoch),
         phabricator_datetime($u_epoch, $viewer)));
 
     $argv = $daemon->getArgv();
@@ -171,7 +191,7 @@ final class PhabricatorDaemonLogViewController
       phutil_tag(
         'tt',
         array(),
-        "phabricator/ $ ./bin/phd log {$id}"));
+        "phabricator/ $ ./bin/phd log --id {$id}"));
 
 
     return $view;

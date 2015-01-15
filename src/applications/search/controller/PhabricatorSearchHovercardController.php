@@ -1,10 +1,11 @@
 <?php
 
-/**
- * @group search
- */
 final class PhabricatorSearchHovercardController
   extends PhabricatorSearchBaseController {
+
+  public function shouldAllowPublic() {
+    return true;
+  }
 
   public function processRequest() {
     $request = $this->getRequest();
@@ -56,6 +57,7 @@ final class PhabricatorSearchHovercardController
       return $this->buildApplicationPage(
         $cards,
         array(
+          'device' => false,
         ));
     } else {
       return id(new AphrontAjaxResponse())->setContent(

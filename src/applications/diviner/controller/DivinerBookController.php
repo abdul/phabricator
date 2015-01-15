@@ -27,14 +27,20 @@ final class DivinerBookController extends DivinerController {
 
     $crumbs = $this->buildApplicationCrumbs();
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($book->getShortTitle())
-        ->setHref('/book/'.$book->getName().'/'));
+    $crumbs->addTextCrumb(
+      $book->getShortTitle(),
+      '/book/'.$book->getName().'/');
 
-    $header = id(new PhabricatorHeaderView())->setHeader($book->getTitle());
+    $header = id(new PHUIHeaderView())
+      ->setHeader($book->getTitle())
+      ->setUser($viewer)
+      ->setPolicyObject($book);
+
     $document = new PHUIDocumentView();
     $document->setHeader($header);
+    $document->addClass('diviner-view');
+
+    $document->setFontKit(PHUIDocumentView::FONT_SOURCE_SANS);
 
     $properties = $this->buildPropertyList($book);
 
@@ -42,6 +48,7 @@ final class DivinerBookController extends DivinerController {
       ->setViewer($viewer)
       ->withBookPHIDs(array($book->getPHID()))
       ->execute();
+
     $atoms = msort($atoms, 'getSortKey');
 
     $group_spec = $book->getConfig('groups');
@@ -60,12 +67,27 @@ final class DivinerBookController extends DivinerController {
     $out = array();
     foreach ($groups as $group => $atoms) {
       $group_name = $book->getGroupName($group);
+      if (!strlen($group_name)) {
+        $group_name = pht('Free Radicals');
+      }
       $section = id(new DivinerSectionView())
-          ->setHeader($group_name);
+        ->setHeader($group_name);
       $section->addContent($this->renderAtomList($atoms));
       $out[] = $section;
     }
+
+    $preface = $book->getPreface();
+    $preface_view = null;
+    if (strlen($preface)) {
+      $preface_view =
+        PhabricatorMarkupEngine::renderOneObject(
+          id(new PhabricatorMarkupOneOff())->setContent($preface),
+          'default',
+          $viewer);
+    }
+
     $document->appendChild($properties);
+    $document->appendChild($preface_view);
     $document->appendChild($out);
 
     return $this->buildApplicationPage(
@@ -75,26 +97,21 @@ final class DivinerBookController extends DivinerController {
       ),
       array(
         'title' => $book->getTitle(),
-        'device' => true,
       ));
   }
 
   private function buildPropertyList(DivinerLiveBook $book) {
-    $user = $this->getRequest()->getUser();
-    $view = id(new PhabricatorPropertyListView())
-      ->setUser($user);
+    $viewer = $this->getRequest()->getUser();
+    $view = id(new PHUIPropertyListView())
+      ->setUser($viewer);
 
     $policies = PhabricatorPolicyQuery::renderPolicyDescriptions(
-      $user,
+      $viewer,
       $book);
 
     $view->addProperty(
-      pht('Visible To'),
-      $policies[PhabricatorPolicyCapability::CAN_VIEW]);
-
-    $view->addProperty(
       pht('Updated'),
-      phabricator_datetime($book->getDateModified(), $user));
+      phabricator_datetime($book->getDateModified(), $viewer));
 
     return $view;
   }

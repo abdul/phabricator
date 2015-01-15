@@ -7,8 +7,10 @@ final class PhabricatorDaemonLogQuery
   const STATUS_ALIVE = 'status-alive';
 
   private $ids;
+  private $notIDs;
   private $status = self::STATUS_ALL;
   private $daemonClasses;
+  private $allowStatusWrites;
 
   public static function getTimeUntilUnknown() {
     return 3 * PhutilDaemonOverseer::HEARTBEAT_WAIT;
@@ -23,6 +25,11 @@ final class PhabricatorDaemonLogQuery
     return $this;
   }
 
+  public function withoutIDs(array $ids) {
+    $this->notIDs = $ids;
+    return $this;
+  }
+
   public function withStatus($status) {
     $this->status = $status;
     return $this;
@@ -33,7 +40,12 @@ final class PhabricatorDaemonLogQuery
     return $this;
   }
 
-  public function loadPage() {
+  public function setAllowStatusWrites($allow) {
+    $this->allowStatusWrites = $allow;
+    return $this;
+  }
+
+  protected function loadPage() {
     $table = new PhabricatorDaemonLog();
     $conn_r = $table->establishConnection('r');
 
@@ -48,13 +60,14 @@ final class PhabricatorDaemonLogQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $daemons) {
+  protected function willFilterPage(array $daemons) {
     $unknown_delay = PhabricatorDaemonLogQuery::getTimeUntilUnknown();
     $dead_delay = PhabricatorDaemonLogQuery::getTimeUntilDead();
 
     $status_running = PhabricatorDaemonLog::STATUS_RUNNING;
     $status_unknown = PhabricatorDaemonLog::STATUS_UNKNOWN;
     $status_wait = PhabricatorDaemonLog::STATUS_WAIT;
+    $status_exiting = PhabricatorDaemonLog::STATUS_EXITING;
     $status_exited = PhabricatorDaemonLog::STATUS_EXITED;
     $status_dead = PhabricatorDaemonLog::STATUS_DEAD;
 
@@ -65,7 +78,8 @@ final class PhabricatorDaemonLogQuery
       $seen = $daemon->getDateModified();
 
       $is_running = ($status == $status_running) ||
-                    ($status == $status_wait);
+                    ($status == $status_wait) ||
+                    ($status == $status_exiting);
 
       // If we haven't seen the daemon recently, downgrade its status to
       // unknown.
@@ -80,11 +94,16 @@ final class PhabricatorDaemonLogQuery
         $status = $status_dead;
       }
 
-      // If we changed the daemon's status, update it.
+      // If we changed the daemon's status, adjust it.
       if ($status != $daemon->getStatus()) {
-        $guard = AphrontWriteGuard::beginScopedUnguardedWrites();
-        $daemon->setStatus($status)->save();
-        unset($guard);
+        $daemon->setStatus($status);
+
+        // ...and write it, if we're in a context where that's reasonable.
+        if ($this->allowStatusWrites) {
+          $guard = AphrontWriteGuard::beginScopedUnguardedWrites();
+            $daemon->save();
+          unset($guard);
+        }
       }
 
       // If the daemon no longer matches the filter, get rid of it.
@@ -106,6 +125,13 @@ final class PhabricatorDaemonLogQuery
         $conn_r,
         'id IN (%Ld)',
         $this->ids);
+    }
+
+    if ($this->notIDs) {
+      $where[] = qsprintf(
+        $conn_r,
+        'id NOT IN (%Ld)',
+        $this->notIDs);
     }
 
     if ($this->getStatusConstants()) {
@@ -136,10 +162,15 @@ final class PhabricatorDaemonLogQuery
           PhabricatorDaemonLog::STATUS_UNKNOWN,
           PhabricatorDaemonLog::STATUS_RUNNING,
           PhabricatorDaemonLog::STATUS_WAIT,
+          PhabricatorDaemonLog::STATUS_EXITING,
         );
       default:
         throw new Exception("Unknown status '{$status}'!");
     }
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorDaemonsApplication';
   }
 
 }

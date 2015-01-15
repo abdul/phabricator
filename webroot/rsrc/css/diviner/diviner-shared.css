@@ -15,10 +15,6 @@
   margin: 0 8px 16px;
 }
 
-a.diviner-atom-signature-name {
-  color: {$violet};
-}
-
 .diviner-table-header {
   padding: 4px 16px;
   background-color: {$greybackground};
@@ -69,8 +65,14 @@ a.diviner-atom-signature-name {
   padding: 0 8px 16px 0;
 }
 
-body .diviner-document-section .phabricator-header-view {
+body .diviner-document-section .phui-header-view {
   width: 100%;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.phui-property-list-view + .diviner-document-section {
+  margin-top: -1px;
 }
 
 .diviner-message-not-documented {
@@ -88,7 +90,8 @@ body .diviner-document-section .phabricator-header-view {
 }
 
 .diviner-list .diviner-atom-signature {
-  color: {$greytext};
+  color: {$violet};
+  margin-left: -16px;
 }
 
 .diviner-list a {
@@ -112,13 +115,17 @@ body .diviner-document-section .phabricator-header-view {
  * Fix excessive padding between method headers and method documentation for
  * methods with no inherited context.
  */
-.diviner-document-section .phabricator-header-shell + .phabricator-remarkup {
+.diviner-document-section .phui-header-shell + .phabricator-remarkup {
   padding-top: 0;
 }
 
+.diviner-list {
+  padding-left: 12px;
+}
+
 .diviner-list li {
-  line-height: 18px;
-  padding-bottom: 4px;
+  line-height: 20px;
+  padding-bottom: 12px;
 }
 
 /* - Book Index ----------------------------------------------------------------
@@ -129,8 +136,8 @@ body .diviner-document-section .phabricator-header-view {
 
 .diviner-book-item {
   display: block;
-  padding: 4px 16px;
-  margin: 0 -16px;
+  padding: 6px 16px;
+  margin: 4px -16px;
 }
 
 .diviner-book-item:hover {
@@ -138,11 +145,13 @@ body .diviner-document-section .phabricator-header-view {
 }
 
 .device-desktop .diviner-book-item:hover {
-  background-color: {$lightgreybackground};
+  background-color: #F5EEFF;
 }
 
 .diviner-book-item-title {
-  font-weight: bold;
+  font-weight: 700;
+  font-size: 16px;
+  color: {$darkbluetext};
 }
 
 .diviner-book-item-type {
@@ -152,6 +161,6 @@ body .diviner-document-section .phabricator-header-view {
 
 .diviner-book-item-subtitle {
   display: block;
-  line-height: 18px;
-  color: {$lightbluetext};
+  line-height: 20px;
+  color: {$lightgreytext};
 }

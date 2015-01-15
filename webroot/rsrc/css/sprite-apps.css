@@ -13,7 +13,7 @@ only screen and (min-device-pixel-ratio: 1.5),
 only screen and (-webkit-min-device-pixel-ratio: 1.5) {
   .sprite-apps {
     background-image: url(/rsrc/image/sprite-apps-X2.png);
-    background-size: 150px 165px;
+    background-size: 120px 135px;
   }
 }
 
@@ -22,7 +22,7 @@ only screen and (-webkit-min-device-pixel-ratio: 1.5) {
   background-position: 0px 0px;
 }
 
-.apps-adventure-white {
+.apps-aphlict-dark {
   background-position: -15px 0px;
 }
 
@@ -30,422 +30,262 @@ only screen and (-webkit-min-device-pixel-ratio: 1.5) {
   background-position: -30px 0px;
 }
 
-.apps-application-white {
+.apps-audit-dark {
   background-position: -45px 0px;
 }
 
-.apps-audit-dark {
+.apps-authentication-dark {
   background-position: -60px 0px;
 }
 
-.apps-audit-white {
+.apps-calendar-dark {
   background-position: -75px 0px;
 }
 
-.apps-authentication-dark {
+.apps-chatlog-dark {
   background-position: -90px 0px;
 }
 
-.apps-authentication-white {
+.apps-conduit-dark {
   background-position: -105px 0px;
 }
 
-.apps-calendar-dark {
-  background-position: -120px 0px;
-}
-
-.apps-calendar-white {
-  background-position: -135px 0px;
-}
-
-.apps-chatlog-dark {
+.apps-conpherence-dark {
   background-position: 0px -15px;
 }
 
-.apps-chatlog-white {
+.apps-countdown-dark {
   background-position: -15px -15px;
 }
 
-.apps-conduit-dark {
+.apps-daemon-dark {
   background-position: -30px -15px;
 }
 
-.apps-conduit-white {
+.apps-differential-dark {
   background-position: -45px -15px;
 }
 
-.apps-conpherence-dark {
+.apps-diffusion-dark {
   background-position: -60px -15px;
 }
 
-.apps-conpherence-white {
+.apps-diviner-dark {
   background-position: -75px -15px;
 }
 
-.apps-countdown-dark {
+.apps-drydock-dark {
   background-position: -90px -15px;
 }
 
-.apps-countdown-white {
+.apps-fact-dark {
   background-position: -105px -15px;
 }
 
-.apps-daemon-dark {
-  background-position: -120px -15px;
-}
-
-.apps-daemon-white {
-  background-position: -135px -15px;
-}
-
-.apps-differential-dark {
+.apps-fancyhome-dark {
   background-position: 0px -30px;
 }
 
-.apps-differential-white {
+.apps-feed-dark {
   background-position: -15px -30px;
 }
 
-.apps-diffusion-dark {
+.apps-files-dark {
   background-position: -30px -30px;
 }
 
-.apps-diffusion-white {
+.apps-flags-dark {
   background-position: -45px -30px;
 }
 
-.apps-diviner-dark {
+.apps-harbormaster-dark {
   background-position: -60px -30px;
 }
 
-.apps-diviner-white {
+.apps-help-dark {
   background-position: -75px -30px;
 }
 
-.apps-drydock-dark {
+.apps-herald-dark {
   background-position: -90px -30px;
 }
 
-.apps-drydock-white {
+.apps-home-dark {
   background-position: -105px -30px;
 }
 
-.apps-fact-dark {
-  background-position: -120px -30px;
-}
-
-.apps-fact-white {
-  background-position: -135px -30px;
-}
-
-.apps-feed-dark {
+.apps-info-sm-dark {
   background-position: 0px -45px;
 }
 
-.apps-feed-white {
+.apps-legalpad-dark {
   background-position: -15px -45px;
 }
 
-.apps-files-dark {
+.apps-logo-dark {
   background-position: -30px -45px;
 }
 
-.apps-files-white {
+.apps-logout-sm-dark {
   background-position: -45px -45px;
 }
 
-.apps-flags-dark {
+.apps-macro-dark {
   background-position: -60px -45px;
 }
 
-.apps-flags-white {
+.apps-mail-dark {
   background-position: -75px -45px;
 }
 
-.apps-harbormaster-dark {
+.apps-maniphest-dark {
   background-position: -90px -45px;
 }
 
-.apps-harbormaster-white {
+.apps-metamta-dark {
   background-position: -105px -45px;
 }
 
-.apps-help-dark {
-  background-position: -120px -45px;
-}
-
-.apps-help-white {
-  background-position: -135px -45px;
-}
-
-.apps-herald-dark {
+.apps-new-sm-dark {
   background-position: 0px -60px;
 }
 
-.apps-herald-white {
+.apps-new-dark {
   background-position: -15px -60px;
 }
 
-.apps-home-dark {
+.apps-nuance-dark {
   background-position: -30px -60px;
 }
 
-.apps-home-white {
+.apps-owners-dark {
   background-position: -45px -60px;
 }
 
-.apps-legalpad-dark {
+.apps-passphrase-dark {
   background-position: -60px -60px;
 }
 
-.apps-legalpad-white {
+.apps-paste-dark {
   background-position: -75px -60px;
 }
 
-.apps-logo-dark {
+.apps-pebkac-dark {
   background-position: -90px -60px;
 }
 
-.apps-logo-white {
+.apps-people-dark {
   background-position: -105px -60px;
 }
 
-.apps-macro-dark {
-  background-position: -120px -60px;
-}
-
-.apps-macro-white {
-  background-position: -135px -60px;
-}
-
-.apps-mail-dark {
+.apps-phage-dark {
   background-position: 0px -75px;
 }
 
-.apps-mail-white {
+.apps-phame-dark {
   background-position: -15px -75px;
 }
 
-.apps-maniphest-dark {
+.apps-phid-dark {
   background-position: -30px -75px;
 }
 
-.apps-maniphest-white {
+.apps-phlux-dark {
   background-position: -45px -75px;
 }
 
-.apps-metamta-dark {
+.apps-pholio-dark {
   background-position: -60px -75px;
 }
 
-.apps-metamta-white {
+.apps-phortune-dark {
   background-position: -75px -75px;
 }
 
-.apps-new-dark {
+.apps-phpast-dark {
   background-position: -90px -75px;
 }
 
-.apps-new-white {
+.apps-phragment-dark {
   background-position: -105px -75px;
 }
 
-.apps-owners-dark {
-  background-position: -120px -75px;
-}
-
-.apps-owners-white {
-  background-position: -135px -75px;
-}
-
-.apps-paste-dark {
+.apps-phrequent-dark {
   background-position: 0px -90px;
 }
 
-.apps-paste-white {
+.apps-phriction-dark {
   background-position: -15px -90px;
 }
 
-.apps-people-dark {
+.apps-phund-dark {
   background-position: -30px -90px;
 }
 
-.apps-people-white {
+.apps-policy-dark {
   background-position: -45px -90px;
 }
 
-.apps-phage-dark {
+.apps-ponder-dark {
   background-position: -60px -90px;
 }
 
-.apps-phage-white {
+.apps-power-dark {
   background-position: -75px -90px;
 }
 
-.apps-phame-dark {
+.apps-projects-dark {
   background-position: -90px -90px;
 }
 
-.apps-phame-white {
+.apps-releeph-dark {
   background-position: -105px -90px;
 }
 
-.apps-phid-dark {
-  background-position: -120px -90px;
-}
-
-.apps-phid-white {
-  background-position: -135px -90px;
-}
-
-.apps-phlux-dark {
+.apps-repositories-dark {
   background-position: 0px -105px;
 }
 
-.apps-phlux-white {
+.apps-search-dark {
   background-position: -15px -105px;
 }
 
-.apps-pholio-dark {
+.apps-settings-sm-dark {
   background-position: -30px -105px;
 }
 
-.apps-pholio-white {
+.apps-settings-dark {
   background-position: -45px -105px;
 }
 
-.apps-phortune-dark {
+.apps-setup-dark {
   background-position: -60px -105px;
 }
 
-.apps-phortune-white {
+.apps-slowvote-dark {
   background-position: -75px -105px;
 }
 
-.apps-phpast-dark {
+.apps-spaces-dark {
   background-position: -90px -105px;
 }
 
-.apps-phpast-white {
+.apps-token-dark {
   background-position: -105px -105px;
 }
 
-.apps-phrequent-dark {
-  background-position: -120px -105px;
-}
-
-.apps-phrequent-white {
-  background-position: -135px -105px;
-}
-
-.apps-phriction-dark {
+.apps-uiexamples-dark {
   background-position: 0px -120px;
 }
 
-.apps-phriction-white {
+.apps-workboard-dark {
   background-position: -15px -120px;
 }
 
-.apps-policy-dark {
+.apps-workphlow-dark {
   background-position: -30px -120px;
 }
 
-.apps-policy-white {
-  background-position: -45px -120px;
-}
-
-.apps-ponder-dark {
-  background-position: -60px -120px;
-}
-
-.apps-ponder-white {
-  background-position: -75px -120px;
-}
-
-.apps-power-dark {
-  background-position: -90px -120px;
-}
-
-.apps-power-white {
-  background-position: -105px -120px;
-}
-
-.apps-projects-dark {
-  background-position: -120px -120px;
-}
-
-.apps-projects-white {
-  background-position: -135px -120px;
-}
-
-.apps-releeph-dark {
-  background-position: 0px -135px;
-}
-
-.apps-releeph-white {
-  background-position: -15px -135px;
-}
-
-.apps-repositories-dark {
-  background-position: -30px -135px;
-}
-
-.apps-repositories-white {
-  background-position: -45px -135px;
-}
-
-.apps-settings-dark {
-  background-position: -60px -135px;
-}
-
-.apps-settings-white {
-  background-position: -75px -135px;
-}
-
-.apps-setup-dark {
-  background-position: -90px -135px;
-}
-
-.apps-setup-white {
-  background-position: -105px -135px;
-}
-
-.apps-slowvote-dark {
-  background-position: -120px -135px;
-}
-
-.apps-slowvote-white {
-  background-position: -135px -135px;
-}
-
-.apps-token-dark {
-  background-position: 0px -150px;
-}
-
-.apps-token-white {
-  background-position: -15px -150px;
-}
-
-.apps-uiexamples-dark {
-  background-position: -30px -150px;
-}
-
-.apps-uiexamples-white {
-  background-position: -45px -150px;
-}
-
-.apps-workphlow-dark {
-  background-position: -60px -150px;
-}
-
-.apps-workphlow-white {
-  background-position: -75px -150px;
-}
-
 .apps-xhprof-dark {
-  background-position: -90px -150px;
-}
-
-.apps-xhprof-white {
-  background-position: -105px -150px;
+  background-position: -45px -120px;
 }

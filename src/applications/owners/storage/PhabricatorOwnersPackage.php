@@ -3,7 +3,6 @@
 final class PhabricatorOwnersPackage extends PhabricatorOwnersDAO
   implements PhabricatorPolicyInterface {
 
-  protected $phid;
   protected $name;
   protected $originalName;
   protected $auditingEnabled;
@@ -30,11 +29,33 @@ final class PhabricatorOwnersPackage extends PhabricatorOwnersDAO
     return false;
   }
 
-  public function getConfiguration() {
+  public function describeAutomaticCapability($capability) {
+    return null;
+  }
+
+  protected function getConfiguration() {
     return array(
       // This information is better available from the history table.
       self::CONFIG_TIMESTAMPS => false,
       self::CONFIG_AUX_PHID   => true,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'name' => 'text128',
+        'originalName' => 'text255',
+        'description' => 'text',
+        'primaryOwnerPHID' => 'phid?',
+        'auditingEnabled' => 'bool',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'name' => array(
+          'columns' => array('name'),
+          'unique' => true,
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
@@ -207,7 +228,7 @@ final class PhabricatorOwnersPackage extends PhabricatorOwnersDAO
       $remove = array();
       foreach ($package_paths as $package_path) {
         if ($package_path['excluded']) {
-          $remove += $relevant_paths[$package_path['path']];
+          $remove += idx($relevant_paths, $package_path['path'], array());
           unset($relevant_paths[$package_path['path']]);
         }
       }
@@ -297,6 +318,8 @@ final class PhabricatorOwnersPackage extends PhabricatorOwnersDAO
 
       $cur_paths = mgroup($cur_paths, 'getRepositoryPHID', 'getPath');
       foreach ($new_paths as $repository_phid => $paths) {
+        // TODO: (T603) Thread policy stuff in here.
+
         // get repository object for path validation
         $repository = id(new PhabricatorRepository())->loadOneWhere(
           'phid = %s',
@@ -321,7 +344,8 @@ final class PhabricatorOwnersPackage extends PhabricatorOwnersDAO
               array(
                 'commit' => $drequest->getCommit(),
                 'path' => $path,
-                'needValidityOnly' => true)));
+                'needValidityOnly' => true,
+              )));
           $valid = $results->isValidResults();
           $is_directory = true;
           if (!$valid) {

@@ -8,7 +8,7 @@ final class AphrontProgressBarView extends AphrontBarView {
   private $max = 100;
   private $alt = '';
 
-  public function getDefaultColor() {
+  protected function getDefaultColor() {
     return AphrontBarView::COLOR_AUTO_BADNESS;
   }
 
@@ -38,23 +38,21 @@ final class AphrontProgressBarView extends AphrontBarView {
 
     $color = $this->getColor();
 
-    return phutil_tag(
-      'div',
-      array(
-        'class' => "aphront-bar progress color-{$color}",
-      ),
+    return phutil_tag_div(
+      "aphront-bar progress color-{$color}",
       array(
         phutil_tag(
           'div',
           array('title' => $this->alt),
           phutil_tag(
             'div',
-            array('style' => hsprintf("width: %dpx;", $width)),
+            array('style' => "width: {$width}px;"),
             '')),
         phutil_tag(
           'span',
           array(),
-          $this->getCaption())));
+          $this->getCaption()),
+        ));
   }
 
 }

@@ -3,6 +3,14 @@
 final class ReleephRequestTransactionalEditor
   extends PhabricatorApplicationTransactionEditor {
 
+  public function getEditorApplicationClass() {
+    return 'PhabricatorReleephApplication';
+  }
+
+  public function getEditorObjectsDescription() {
+    return pht('Releeph Requests');
+  }
+
   public function getTransactionTypes() {
     $types = parent::getTransactionTypes();
 
@@ -18,7 +26,7 @@ final class ReleephRequestTransactionalEditor
     return $types;
   }
 
-  public function getCustomTransactionOldValue(
+  protected function getCustomTransactionOldValue(
     PhabricatorLiskDAO $object,
     PhabricatorApplicationTransaction $xaction) {
 
@@ -50,7 +58,7 @@ final class ReleephRequestTransactionalEditor
     }
   }
 
-  public function getCustomTransactionNewValue(
+  protected function getCustomTransactionNewValue(
     PhabricatorLiskDAO $object,
     PhabricatorApplicationTransaction $xaction) {
 
@@ -66,7 +74,7 @@ final class ReleephRequestTransactionalEditor
     }
   }
 
-  public function applyCustomInternalTransaction(
+  protected function applyCustomInternalTransaction(
     PhabricatorLiskDAO $object,
     PhabricatorApplicationTransaction $xaction) {
 
@@ -155,7 +163,9 @@ final class ReleephRequestTransactionalEditor
     return parent::filterTransactions($object, $xactions);
   }
 
-  protected function supportsMail() {
+  protected function shouldSendMail(
+    PhabricatorLiskDAO $object,
+    array $xactions) {
     return true;
   }
 
@@ -202,8 +212,8 @@ final class ReleephRequestTransactionalEditor
   protected function getMailTo(PhabricatorLiskDAO $object) {
     $to_phids = array();
 
-    $releeph_project = $object->loadReleephProject();
-    foreach ($releeph_project->getPushers() as $phid) {
+    $product = $object->getBranch()->getProduct();
+    foreach ($product->getPushers() as $phid) {
       $to_phids[] = $phid;
     }
 
@@ -225,8 +235,8 @@ final class ReleephRequestTransactionalEditor
     $body = parent::buildMailBody($object, $xactions);
 
     $rq = $object;
-    $releeph_branch = $rq->loadReleephBranch();
-    $releeph_project = $releeph_branch->loadReleephProject();
+    $releeph_branch = $rq->getBranch();
+    $releeph_project = $releeph_branch->getProduct();
 
     /**
      * If any of the events we are emailing about were about a pick failure
@@ -251,7 +261,7 @@ final class ReleephRequestTransactionalEditor
       }
     }
 
-    $name = sprintf("RQ%s: %s", $rq->getID(), $rq->getSummaryForDisplay());
+    $name = sprintf('RQ%s: %s', $rq->getID(), $rq->getSummaryForDisplay());
     $body->addTextSection(
       pht('RELEEPH REQUEST'),
       $name."\n".

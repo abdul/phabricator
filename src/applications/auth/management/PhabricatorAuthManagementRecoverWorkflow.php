@@ -22,7 +22,7 @@ final class PhabricatorAuthManagementRecoverWorkflow
   public function execute(PhutilArgumentParser $args) {
 
     $can_recover = id(new PhabricatorPeopleQuery())
-      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->setViewer($this->getViewer())
       ->withIsAdmin(true)
       ->execute();
     if (!$can_recover) {
@@ -48,7 +48,7 @@ final class PhabricatorAuthManagementRecoverWorkflow
     $username = head($usernames);
 
     $user = id(new PhabricatorPeopleQuery())
-      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->setViewer($this->getViewer())
       ->withUsernames(array($username))
       ->executeOne();
 
@@ -69,13 +69,20 @@ final class PhabricatorAuthManagementRecoverWorkflow
           $can_recover));
     }
 
+    $engine = new PhabricatorAuthSessionEngine();
+    $onetime_uri = $engine->getOneTimeLoginURI(
+      $user,
+      null,
+      PhabricatorAuthSessionEngine::ONETIME_RECOVER);
+
     $console = PhutilConsole::getConsole();
     $console->writeOut(
       pht(
-        'Use this link to recover access to the "%s" account:',
+        'Use this link to recover access to the "%s" account from the web '.
+        'interface:',
         $username));
     $console->writeOut("\n\n");
-    $console->writeOut("    %s", $user->getEmailLoginURI());
+    $console->writeOut('    %s', $onetime_uri);
     $console->writeOut("\n\n");
     $console->writeOut(
       pht(

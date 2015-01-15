@@ -3,8 +3,9 @@
 final class PhabricatorObjectQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
-  private $phids;
-  private $names;
+  private $phids = array();
+  private $names = array();
+  private $types;
 
   private $namedResults;
 
@@ -18,14 +19,22 @@ final class PhabricatorObjectQuery
     return $this;
   }
 
-  public function loadPage() {
+  public function withTypes(array $types) {
+    $this->types = $types;
+    return $this;
+  }
+
+  protected function loadPage() {
     if ($this->namedResults === null) {
       $this->namedResults = array();
     }
 
     $types = PhabricatorPHIDType::getAllTypes();
+    if ($this->types) {
+      $types = array_select_keys($types, $this->types);
+    }
 
-    $names = $this->names;
+    $names = array_unique($this->names);
     $phids = $this->phids;
 
     // We allow objects to be named by their PHID in addition to their normal
@@ -41,6 +50,8 @@ final class PhabricatorObjectQuery
         }
       }
     }
+
+    $phids = array_unique($phids);
 
     if ($names) {
       $name_results = $this->loadObjectsByName($types, $names);
@@ -67,7 +78,7 @@ final class PhabricatorObjectQuery
 
   public function getNamedResults() {
     if ($this->namedResults === null) {
-      throw new Exception("Call execute() before getNamedResults()!");
+      throw new Exception('Call execute() before getNamedResults()!');
     }
     return $this->namedResults;
   }
@@ -93,13 +104,27 @@ final class PhabricatorObjectQuery
   }
 
   private function loadObjectsByPHID(array $types, array $phids) {
+    $results = array();
+
+    $workspace = $this->getObjectsFromWorkspace($phids);
+
+    foreach ($phids as $key => $phid) {
+      if (isset($workspace[$phid])) {
+        $results[$phid] = $workspace[$phid];
+        unset($phids[$key]);
+      }
+    }
+
+    if (!$phids) {
+      return $results;
+    }
+
     $groups = array();
     foreach ($phids as $phid) {
       $type = phid_get_type($phid);
       $groups[$type][] = $phid;
     }
 
-    $results = array();
     foreach ($groups as $type => $group) {
       if (isset($types[$type])) {
         $objects = $types[$type]->loadObjects($this, $group);
@@ -119,12 +144,22 @@ final class PhabricatorObjectQuery
   }
 
   /**
-   * This query disables policy filtering because it is performed in the
-   * subqueries which actually load objects. We don't need to re-filter
-   * results, since policies have already been applied.
+   * This query disables policy filtering if the only required capability is
+   * the view capability.
+   *
+   * The view capability is always checked in the subqueries, so we do not need
+   * to re-filter results. For any other set of required capabilities, we do.
    */
   protected function shouldDisablePolicyFiltering() {
-    return true;
+    $view_capability = PhabricatorPolicyCapability::CAN_VIEW;
+    if ($this->getRequiredCapabilities() === array($view_capability)) {
+      return true;
+    }
+    return false;
+  }
+
+  public function getQueryApplicationClass() {
+    return null;
   }
 
 }

@@ -6,6 +6,17 @@ final class PhabricatorRepositoryQuery
   private $ids;
   private $phids;
   private $callsigns;
+  private $types;
+  private $uuids;
+  private $nameContains;
+  private $remoteURIs;
+  private $anyProjectPHIDs;
+
+  private $numericIdentifiers;
+  private $callsignIdentifiers;
+  private $phidIdentifiers;
+
+  private $identifierMap;
 
   const STATUS_OPEN = 'status-open';
   const STATUS_CLOSED = 'status-closed';
@@ -18,8 +29,14 @@ final class PhabricatorRepositoryQuery
   const ORDER_NAME = 'order-name';
   private $order = self::ORDER_CREATED;
 
+  const HOSTED_PHABRICATOR = 'hosted-phab';
+  const HOSTED_REMOTE = 'hosted-remote';
+  const HOSTED_ALL = 'hosted-all';
+  private $hosted = self::HOSTED_ALL;
+
   private $needMostRecentCommits;
   private $needCommitCounts;
+  private $needProjectPHIDs;
 
   public function withIDs(array $ids) {
     $this->ids = $ids;
@@ -36,8 +53,59 @@ final class PhabricatorRepositoryQuery
     return $this;
   }
 
+  public function withIdentifiers(array $identifiers) {
+    $ids = array(); $callsigns = array(); $phids = array();
+    foreach ($identifiers as $identifier) {
+      if (ctype_digit($identifier)) {
+        $ids[$identifier] = $identifier;
+      } else {
+        $repository_type = PhabricatorRepositoryRepositoryPHIDType::TYPECONST;
+        if (phid_get_type($identifier) === $repository_type) {
+          $phids[$identifier] = $identifier;
+        } else {
+          $callsigns[$identifier] = $identifier;
+        }
+      }
+    }
+
+    $this->numericIdentifiers = $ids;
+    $this->callsignIdentifiers = $callsigns;
+    $this->phidIdentifiers = $phids;
+    return $this;
+  }
+
   public function withStatus($status) {
     $this->status = $status;
+    return $this;
+  }
+
+  public function withHosted($hosted) {
+    $this->hosted = $hosted;
+    return $this;
+  }
+
+  public function withTypes(array $types) {
+    $this->types = $types;
+    return $this;
+  }
+
+  public function withUUIDs(array $uuids) {
+    $this->uuids = $uuids;
+    return $this;
+  }
+
+  public function withNameContains($contains) {
+    $this->nameContains = $contains;
+    return $this;
+  }
+
+  public function withRemoteURIs(array $uris) {
+    $this->remoteURIs = $uris;
+    return $this;
+  }
+
+  public function withAnyProjects(array $projects) {
+    $this->anyProjectPHIDs = $projects;
     return $this;
   }
 
@@ -51,14 +119,31 @@ final class PhabricatorRepositoryQuery
     return $this;
   }
 
+  public function needProjectPHIDs($need_phids) {
+    $this->needProjectPHIDs = $need_phids;
+    return $this;
+  }
+
   public function setOrder($order) {
     $this->order = $order;
     return $this;
   }
 
+  public function getIdentifierMap() {
+    if ($this->identifierMap === null) {
+      throw new Exception(
+        'You must execute() the query before accessing the identifier map.');
+    }
+    return $this->identifierMap;
+  }
+
   protected function loadPage() {
     $table = new PhabricatorRepository();
     $conn_r = $table->establishConnection('r');
+
+    if ($this->identifierMap === null) {
+      $this->identifierMap = array();
+    }
 
     $data = queryfx_all(
       $conn_r,
@@ -98,11 +183,10 @@ final class PhabricatorRepositoryQuery
       }
     }
 
-
     return $repositories;
   }
 
-  public function willFilterPage(array $repositories) {
+  protected function willFilterPage(array $repositories) {
     assert_instances_of($repositories, 'PhabricatorRepository');
 
     // TODO: Denormalize repository status into the PhabricatorRepository
@@ -125,12 +209,92 @@ final class PhabricatorRepositoryQuery
         default:
           throw new Exception("Unknown status '{$status}'!");
       }
+
+      // TODO: This should also be denormalized.
+      $hosted = $this->hosted;
+      switch ($hosted) {
+        case self::HOSTED_PHABRICATOR:
+          if (!$repo->isHosted()) {
+            unset($repositories[$key]);
+          }
+          break;
+        case self::HOSTED_REMOTE:
+          if ($repo->isHosted()) {
+            unset($repositories[$key]);
+          }
+          break;
+        case self::HOSTED_ALL:
+          break;
+        default:
+          throw new Exception("Uknown hosted failed '${hosted}'!");
+      }
+    }
+
+    // TODO: Denormalize this, too.
+    if ($this->remoteURIs) {
+      $try_uris = $this->getNormalizedPaths();
+      $try_uris = array_fuse($try_uris);
+      foreach ($repositories as $key => $repository) {
+        if (!isset($try_uris[$repository->getNormalizedPath()])) {
+          unset($repositories[$key]);
+        }
+      }
+    }
+
+    // Build the identifierMap
+    if ($this->numericIdentifiers) {
+      foreach ($this->numericIdentifiers as $id) {
+        if (isset($repositories[$id])) {
+          $this->identifierMap[$id] = $repositories[$id];
+        }
+      }
+    }
+
+    if ($this->callsignIdentifiers) {
+      $repository_callsigns = mpull($repositories, null, 'getCallsign');
+
+      foreach ($this->callsignIdentifiers as $callsign) {
+        if (isset($repository_callsigns[$callsign])) {
+          $this->identifierMap[$callsign] = $repository_callsigns[$callsign];
+        }
+      }
+    }
+
+    if ($this->phidIdentifiers) {
+      $repository_phids = mpull($repositories, null, 'getPHID');
+
+      foreach ($this->phidIdentifiers as $phid) {
+        if (isset($repository_phids[$phid])) {
+          $this->identifierMap[$phid] = $repository_phids[$phid];
+        }
+      }
     }
 
     return $repositories;
   }
 
-  public function getReversePaging() {
+  protected function didFilterPage(array $repositories) {
+    if ($this->needProjectPHIDs) {
+      $type_project = PhabricatorProjectObjectHasProjectEdgeType::EDGECONST;
+
+      $edge_query = id(new PhabricatorEdgeQuery())
+        ->withSourcePHIDs(mpull($repositories, 'getPHID'))
+        ->withEdgeTypes(array($type_project));
+      $edge_query->execute();
+
+      foreach ($repositories as $repository) {
+        $project_phids = $edge_query->getDestinationPHIDs(
+          array(
+            $repository->getPHID(),
+          ));
+        $repository->attachProjectPHIDs($project_phids);
+      }
+    }
+
+    return $repositories;
+  }
+
+  protected function getReversePaging() {
     switch ($this->order) {
       case self::ORDER_CALLSIGN:
       case self::ORDER_NAME:
@@ -140,10 +304,6 @@ final class PhabricatorRepositoryQuery
   }
 
   protected function getPagingColumn() {
-
-    // TODO: Add a key for ORDER_NAME.
-    // TODO: Add a key for ORDER_COMMITTED.
-
     $order = $this->order;
     switch ($order) {
       case self::ORDER_CREATED:
@@ -160,10 +320,15 @@ final class PhabricatorRepositoryQuery
   }
 
   private function loadCursorObject($id) {
-    $results = id(new PhabricatorRepositoryQuery())
-      ->setViewer($this->getViewer())
-      ->withIDs(array($id))
-      ->execute();
+    $query = id(new PhabricatorRepositoryQuery())
+      ->setViewer($this->getPagingViewer())
+      ->withIDs(array((int)$id));
+
+    if ($this->order == self::ORDER_COMMITTED) {
+      $query->needMostRecentCommits(true);
+    }
+
+    $results = $query->execute();
     return head($results);
   }
 
@@ -192,69 +357,55 @@ final class PhabricatorRepositoryQuery
       return null;
     }
 
+    $id_column = array(
+      'name' => 'r.id',
+      'type' => 'int',
+      'value' => $cursor->getID(),
+    );
+
+    $columns = array();
     switch ($order) {
       case self::ORDER_COMMITTED:
         $commit = $cursor->getMostRecentCommit();
         if (!$commit) {
           return null;
         }
-        $epoch = $commit->getEpoch();
-        if ($before_id) {
-          return qsprintf(
-            $conn_r,
-            '(s.epoch %Q %d OR (s.epoch = %d AND r.id %Q %d))',
-            $this->getReversePaging() ? '<' : '>',
-            $epoch,
-            $epoch,
-            $this->getReversePaging() ? '<' : '>',
-            $cursor->getID());
-        } else {
-          return qsprintf(
-            $conn_r,
-            '(s.epoch %Q %d OR (s.epoch = %d AND r.id %Q %d))',
-            $this->getReversePaging() ? '>' : '<',
-            $epoch,
-            $epoch,
-            $this->getReversePaging() ? '>' : '<',
-            $cursor->getID());
-        }
+        $columns[] = array(
+          'name' => 's.epoch',
+          'type' => 'int',
+          'value' => $commit->getEpoch(),
+        );
+        $columns[] = $id_column;
+        break;
       case self::ORDER_CALLSIGN:
-        if ($before_id) {
-          return qsprintf(
-            $conn_r,
-            '(r.callsign %Q %s)',
-            $this->getReversePaging() ? '<' : '>',
-            $cursor->getCallsign());
-        } else {
-          return qsprintf(
-            $conn_r,
-            '(r.callsign %Q %s)',
-            $this->getReversePaging() ? '>' : '<',
-            $cursor->getCallsign());
-        }
+        $columns[] = array(
+          'name' => 'r.callsign',
+          'type' => 'string',
+          'value' => $cursor->getCallsign(),
+          'reverse' => true,
+        );
+        break;
       case self::ORDER_NAME:
-        if ($before_id) {
-          return qsprintf(
-            $conn_r,
-            '(r.name %Q %s OR (r.name = %s AND r.id %Q %d))',
-            $this->getReversePaging() ? '<' : '>',
-            $cursor->getName(),
-            $cursor->getName(),
-            $this->getReversePaging() ? '<' : '>',
-            $cursor->getID());
-        } else {
-          return qsprintf(
-            $conn_r,
-            '(r.name %Q %s OR (r.name = %s AND r.id %Q %d))',
-            $this->getReversePaging() ? '>' : '<',
-            $cursor->getName(),
-            $cursor->getName(),
-            $this->getReversePaging() ? '>' : '<',
-            $cursor->getID());
-        }
+        $columns[] = array(
+          'name' => 'r.name',
+          'type' => 'string',
+          'value' => $cursor->getName(),
+          'reverse' => true,
+        );
+        $columns[] = $id_column;
+        break;
       default:
         throw new Exception("Unknown order '{$order}'!");
     }
+
+    return $this->buildPagingClauseFromMultipleColumns(
+      $conn_r,
+      $columns,
+      array(
+        // TODO: Clean up the column ordering stuff and then make this
+        // depend on getReversePaging().
+        'reversed' => (bool)($before_id),
+      ));
   }
 
   private function buildJoinsClause(AphrontDatabaseConnection $conn_r) {
@@ -269,6 +420,12 @@ final class PhabricatorRepositoryQuery
         $conn_r,
         'LEFT JOIN %T s ON r.id = s.repositoryID',
         PhabricatorRepository::TABLE_SUMMARY);
+    }
+
+    if ($this->anyProjectPHIDs) {
+      $joins[] = qsprintf(
+        $conn_r,
+        'JOIN edge e ON e.src = r.phid');
     }
 
     return implode(' ', $joins);
@@ -298,9 +455,94 @@ final class PhabricatorRepositoryQuery
         $this->callsigns);
     }
 
+    if ($this->numericIdentifiers ||
+      $this->callsignIdentifiers ||
+      $this->phidIdentifiers) {
+      $identifier_clause = array();
+
+      if ($this->numericIdentifiers) {
+        $identifier_clause[] = qsprintf(
+          $conn_r,
+          'r.id IN (%Ld)',
+          $this->numericIdentifiers);
+      }
+
+      if ($this->callsignIdentifiers) {
+        $identifier_clause[] = qsprintf(
+          $conn_r,
+          'r.callsign IN (%Ls)',
+          $this->callsignIdentifiers);
+      }
+
+      if ($this->phidIdentifiers) {
+        $identifier_clause[] = qsprintf(
+          $conn_r,
+          'r.phid IN (%Ls)',
+          $this->phidIdentifiers);
+      }
+
+      $where = array('('.implode(' OR ', $identifier_clause).')');
+    }
+
+    if ($this->types) {
+      $where[] = qsprintf(
+        $conn_r,
+        'r.versionControlSystem IN (%Ls)',
+        $this->types);
+    }
+
+    if ($this->uuids) {
+      $where[] = qsprintf(
+        $conn_r,
+        'r.uuid IN (%Ls)',
+        $this->uuids);
+    }
+
+    if (strlen($this->nameContains)) {
+      $where[] = qsprintf(
+        $conn_r,
+        'name LIKE %~',
+        $this->nameContains);
+    }
+
+    if ($this->anyProjectPHIDs) {
+      $where[] = qsprintf(
+        $conn_r,
+        'e.dst IN (%Ls)',
+        $this->anyProjectPHIDs);
+    }
+
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorDiffusionApplication';
+  }
+
+  private function getNormalizedPaths() {
+    $normalized_uris = array();
+
+    // Since we don't know which type of repository this URI is in the general
+    // case, just generate all the normalizations. We could refine this in some
+    // cases: if the query specifies VCS types, or the URI is a git-style URI
+    // or an `svn+ssh` URI, we could deduce how to normalize it. However, this
+    // would be more complicated and it's not clear if it matters in practice.
+
+    foreach ($this->remoteURIs as $uri) {
+      $normalized_uris[] = new PhabricatorRepositoryURINormalizer(
+        PhabricatorRepositoryURINormalizer::TYPE_GIT,
+        $uri);
+      $normalized_uris[] = new PhabricatorRepositoryURINormalizer(
+        PhabricatorRepositoryURINormalizer::TYPE_SVN,
+        $uri);
+      $normalized_uris[] = new PhabricatorRepositoryURINormalizer(
+        PhabricatorRepositoryURINormalizer::TYPE_MERCURIAL,
+        $uri);
+    }
+
+    return array_unique(mpull($normalized_uris, 'getNormalizedPath'));
   }
 
 }

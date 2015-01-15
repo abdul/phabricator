@@ -7,6 +7,14 @@ final class DifferentialChangesetOneUpRenderer
     return true;
   }
 
+  protected function renderColgroup() {
+    return phutil_tag('colgroup', array(), array(
+      phutil_tag('col', array('class' => 'num')),
+      phutil_tag('col', array('class' => 'num')),
+      phutil_tag('col', array('class' => 'unified')),
+    ));
+  }
+
   public function renderTextChange(
     $range_start,
     $range_len,
@@ -27,19 +35,19 @@ final class DifferentialChangesetOneUpRenderer
             } else {
               $class = 'left';
             }
-            $out[] = hsprintf('<th>%s</th>', $p['line']);
-            $out[] = hsprintf('<th></th>');
-            $out[] = hsprintf('<td class="%s">%s</td>', $class, $p['render']);
+            $out[] = phutil_tag('th', array(), $p['line']);
+            $out[] = phutil_tag('th', array());
+            $out[] = phutil_tag('td', array('class' => $class), $p['render']);
           } else if ($type == 'new') {
             if ($p['htype']) {
               $class = 'right new';
-              $out[] = hsprintf('<th />');
+              $out[] = phutil_tag('th', array());
             } else {
               $class = 'right';
-              $out[] = hsprintf('<th>%s</th>', $p['oline']);
+              $out[] = phutil_tag('th', array(), $p['oline']);
             }
-            $out[] = hsprintf('<th>%s</th>', $p['line']);
-            $out[] = hsprintf('<td class="%s">%s</td>', $class, $p['render']);
+            $out[] = phutil_tag('th', array(), $p['line']);
+            $out[] = phutil_tag('td', array('class' => $class), $p['render']);
           }
           $out[] = hsprintf('</tr>');
           break;
@@ -67,11 +75,13 @@ final class DifferentialChangesetOneUpRenderer
     return null;
   }
 
-  public function renderFileChange($old_file = null,
-                                   $new_file = null,
-                                   $id = 0,
-                                   $vs = 0) {
-    throw new Exception("Not implemented!");
+  public function renderFileChange(
+    $old_file = null,
+    $new_file = null,
+    $id = 0,
+    $vs = 0) {
+
+    throw new PhutilMethodNotImplementedException();
   }
 
 }

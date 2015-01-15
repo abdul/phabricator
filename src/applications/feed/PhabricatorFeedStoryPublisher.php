@@ -10,6 +10,26 @@ final class PhabricatorFeedStoryPublisher {
   private $primaryObjectPHID;
   private $subscribedPHIDs = array();
   private $mailRecipientPHIDs = array();
+  private $notifyAuthor;
+  private $mailTags = array();
+
+  public function setMailTags(array $mail_tags) {
+    $this->mailTags = $mail_tags;
+    return $this;
+  }
+
+  public function getMailTags() {
+    return $this->mailTags;
+  }
+
+  public function setNotifyAuthor($notify_author) {
+    $this->notifyAuthor = $notify_author;
+    return $this;
+  }
+
+  public function getNotifyAuthor() {
+    return $this->notifyAuthor;
+  }
 
   public function setRelatedPHIDs(array $phids) {
     $this->relatedPHIDs = $phids;
@@ -54,7 +74,7 @@ final class PhabricatorFeedStoryPublisher {
   public function publish() {
     $class = $this->storyType;
     if (!$class) {
-      throw new Exception("Call setStoryType() before publishing!");
+      throw new Exception('Call setStoryType() before publishing!');
     }
 
     if (!class_exists($class)) {
@@ -100,9 +120,11 @@ final class PhabricatorFeedStoryPublisher {
         implode(', ', $sql));
     }
 
-    $this->insertNotifications($chrono_key);
-    if (PhabricatorEnv::getEnvConfig('notification.enabled')) {
-      $this->sendNotification($chrono_key);
+    $subscribed_phids = $this->subscribedPHIDs;
+    if ($subscribed_phids) {
+      $subscribed_phids = $this->filterSubscribedPHIDs($subscribed_phids);
+      $this->insertNotifications($chrono_key, $subscribed_phids);
+      $this->sendNotification($chrono_key, $subscribed_phids);
     }
 
     PhabricatorWorker::scheduleTask(
@@ -114,19 +136,10 @@ final class PhabricatorFeedStoryPublisher {
     return $story;
   }
 
-  private function insertNotifications($chrono_key) {
-    $subscribed_phids = $this->subscribedPHIDs;
-    $subscribed_phids = array_diff(
-      $subscribed_phids,
-      array($this->storyAuthorPHID));
-
-    if (!$subscribed_phids) {
-      return;
-    }
-
+  private function insertNotifications($chrono_key, array $subscribed_phids) {
     if (!$this->primaryObjectPHID) {
       throw new Exception(
-        "You must call setPrimaryObjectPHID() if you setSubscribedPHIDs()!");
+        'You must call setPrimaryObjectPHID() if you setSubscribedPHIDs()!');
     }
 
     $notif = new PhabricatorFeedStoryNotification();
@@ -151,26 +164,74 @@ final class PhabricatorFeedStoryPublisher {
         $mark_read);
     }
 
-    queryfx(
-      $conn,
-      'INSERT INTO %T
-     (primaryObjectPHID, userPHID, chronologicalKey, hasViewed)
-     VALUES %Q',
-      $notif->getTableName(),
-      implode(', ', $sql));
+    if ($sql) {
+      queryfx(
+        $conn,
+        'INSERT INTO %T '.
+        '(primaryObjectPHID, userPHID, chronologicalKey, hasViewed) '.
+        'VALUES %Q',
+        $notif->getTableName(),
+        implode(', ', $sql));
+    }
   }
 
-  private function sendNotification($chrono_key) {
-    $server_uri = PhabricatorEnv::getEnvConfig('notification.server-uri');
-
+  private function sendNotification($chrono_key, array $subscribed_phids) {
     $data = array(
-      'key' => (string)$chrono_key,
+      'key'         => (string)$chrono_key,
+      'type'        => 'notification',
+      'subscribers' => $subscribed_phids,
     );
 
-    id(new HTTPSFuture($server_uri, $data))
-      ->setMethod('POST')
-      ->setTimeout(1)
-      ->resolve();
+    PhabricatorNotificationClient::tryToPostMessage($data);
+  }
+
+  /**
+   * Remove PHIDs who should not receive notifications from a subscriber list.
+   *
+   * @param list<phid> List of potential subscribers.
+   * @return list<phid> List of actual subscribers.
+   */
+  private function filterSubscribedPHIDs(array $phids) {
+    $tags = $this->getMailTags();
+    if ($tags) {
+      $all_prefs = id(new PhabricatorUserPreferences())->loadAllWhere(
+        'userPHID in (%Ls)',
+        $phids);
+      $all_prefs = mpull($all_prefs, null, 'getUserPHID');
+    }
+
+    $pref_default = PhabricatorUserPreferences::MAILTAG_PREFERENCE_EMAIL;
+    $pref_ignore = PhabricatorUserPreferences::MAILTAG_PREFERENCE_IGNORE;
+
+    $keep = array();
+    foreach ($phids as $phid) {
+      if (($phid == $this->storyAuthorPHID) && !$this->getNotifyAuthor()) {
+        continue;
+      }
+
+      if ($tags && isset($all_prefs[$phid])) {
+        $mailtags = $all_prefs[$phid]->getPreference(
+          PhabricatorUserPreferences::PREFERENCE_MAILTAGS,
+          array());
+
+        $notify = false;
+        foreach ($tags as $tag) {
+          // If this is set to "email" or "notify", notify the user.
+          if ((int)idx($mailtags, $tag, $pref_default) != $pref_ignore) {
+            $notify = true;
+            break;
+          }
+        }
+
+        if (!$notify) {
+          continue;
+        }
+      }
+
+      $keep[] = $phid;
+    }
+
+    return array_values(array_unique($keep));
   }
 
   /**

@@ -1,14 +1,12 @@
 <?php
 
-/**
- * @group maniphest
- */
 final class ManiphestTaskListView extends ManiphestView {
 
   private $tasks;
   private $handles;
   private $showBatchControls;
   private $showSubpriorityControls;
+  private $noDataString;
 
   public function setTasks(array $tasks) {
     assert_instances_of($tasks, 'ManiphestTask');
@@ -32,22 +30,27 @@ final class ManiphestTaskListView extends ManiphestView {
     return $this;
   }
 
+  public function setNoDataString($text) {
+    $this->noDataString = $text;
+    return $this;
+  }
+
   public function render() {
     $handles = $this->handles;
 
+    require_celerity_resource('maniphest-task-summary-css');
+
     $list = new PHUIObjectItemListView();
-    $list->setCards(true);
     $list->setFlush(true);
 
+    if ($this->noDataString) {
+      $list->setNoDataString($this->noDataString);
+    } else {
+      $list->setNoDataString(pht('No tasks.'));
+    }
+
     $status_map = ManiphestTaskStatus::getTaskStatusMap();
-    $color_map = array(
-      ManiphestTaskPriority::PRIORITY_UNBREAK_NOW => 'indigo',
-      ManiphestTaskPriority::PRIORITY_TRIAGE => 'violet',
-      ManiphestTaskPriority::PRIORITY_HIGH => 'red',
-      ManiphestTaskPriority::PRIORITY_NORMAL => 'orange',
-      ManiphestTaskPriority::PRIORITY_LOW => 'yellow',
-      ManiphestTaskPriority::PRIORITY_WISH => 'sky',
-    );
+    $color_map = ManiphestTaskPriority::getColorMap();
 
     if ($this->showBatchControls) {
       Javelin::initBehavior('maniphest-list-editor');
@@ -60,20 +63,13 @@ final class ManiphestTaskListView extends ManiphestView {
       $item->setHref('/T'.$task->getID());
 
       if ($task->getOwnerPHID()) {
-        $owner = idx($handles, $task->getOwnerPHID());
-        // TODO: This should be guaranteed, see T3817.
-        if ($owner) {
-          $item->addByline(pht('Assigned: %s', $owner->renderLink()));
-        }
+        $owner = $handles[$task->getOwnerPHID()];
+        $item->addByline(pht('Assigned: %s', $owner->renderLink()));
       }
 
       $status = $task->getStatus();
-      if ($status != ManiphestTaskStatus::STATUS_OPEN) {
-        $item->addFootIcon(
-          ($status == ManiphestTaskStatus::STATUS_CLOSED_RESOLVED)
-            ? 'enable-white'
-            : 'delete-white',
-          idx($status_map, $status, 'Unknown'));
+      if ($task->isClosed()) {
+        $item->setDisabled(true);
       }
 
       $item->setBarColor(idx($color_map, $task->getPriority(), 'grey'));
@@ -89,13 +85,16 @@ final class ManiphestTaskListView extends ManiphestView {
         $item->addSigil('maniphest-task');
       }
 
-      $projects_view = new ManiphestTaskProjectsView();
-      $projects_view->setHandles(
-        array_select_keys(
-          $handles,
-          $task->getProjectPHIDs()));
+      $project_handles = array_select_keys(
+        $handles,
+        $task->getProjectPHIDs());
 
-      $item->addAttribute($projects_view);
+      $item->addAttribute(
+        id(new PHUIHandleTagListView())
+          ->setLimit(4)
+          ->setNoDataString(pht('No Projects'))
+          ->setSlim(true)
+          ->setHandles($project_handles));
 
       $item->setMetadata(
         array(
@@ -103,17 +102,47 @@ final class ManiphestTaskListView extends ManiphestView {
         ));
 
       if ($this->showBatchControls) {
+        $href = new PhutilURI('/maniphest/task/edit/'.$task->getID().'/');
+        if (!$this->showSubpriorityControls) {
+          $href->setQueryParam('ungrippable', 'true');
+        }
         $item->addAction(
           id(new PHUIListItemView())
-            ->setIcon('edit')
+            ->setIcon('fa-pencil')
             ->addSigil('maniphest-edit-task')
-            ->setHref('/maniphest/task/edit/'.$task->getID().'/'));
+            ->setHref($href));
       }
 
       $list->addItem($item);
     }
 
     return $list;
+  }
+
+  public static function loadTaskHandles(
+    PhabricatorUser $viewer,
+    array $tasks) {
+    assert_instances_of($tasks, 'ManiphestTask');
+
+    $phids = array();
+    foreach ($tasks as $task) {
+      $assigned_phid = $task->getOwnerPHID();
+      if ($assigned_phid) {
+        $phids[] = $assigned_phid;
+      }
+      foreach ($task->getProjectPHIDs() as $project_phid) {
+        $phids[] = $project_phid;
+      }
+    }
+
+    if (!$phids) {
+      return array();
+    }
+
+    return id(new PhabricatorHandleQuery())
+      ->setViewer($viewer)
+      ->withPHIDs($phids)
+      ->execute();
   }
 
 }

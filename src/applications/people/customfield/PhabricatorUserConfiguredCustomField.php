@@ -8,7 +8,7 @@ final class PhabricatorUserConfiguredCustomField
     return 'user';
   }
 
-  public function createFields() {
+  public function createFields($object) {
     return PhabricatorStandardCustomField::buildStandardFields(
       $this,
       PhabricatorEnv::getEnvConfig('user.custom-field-definitions', array()));
@@ -16,6 +16,14 @@ final class PhabricatorUserConfiguredCustomField
 
   public function newStorageObject() {
     return new PhabricatorUserConfiguredCustomFieldStorage();
+  }
+
+  protected function newStringIndexStorage() {
+    return new PhabricatorUserCustomFieldStringIndex();
+  }
+
+  protected function newNumericIndexStorage() {
+    return new PhabricatorUserCustomFieldNumericIndex();
   }
 
 }

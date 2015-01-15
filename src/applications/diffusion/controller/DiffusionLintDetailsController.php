@@ -2,9 +2,9 @@
 
 final class DiffusionLintDetailsController extends DiffusionController {
 
-  public function processRequest() {
+  protected function processDiffusionRequest(AphrontRequest $request) {
     $limit = 500;
-    $offset = $this->getRequest()->getInt('offset', 0);
+    $offset = $request->getInt('offset', 0);
 
     $drequest = $this->getDiffusionRequest();
     $branch = $drequest->loadBranch();
@@ -15,22 +15,26 @@ final class DiffusionLintDetailsController extends DiffusionController {
 
     $rows = array();
     foreach ($messages as $message) {
-      $path = hsprintf(
-        '<a href="%s">%s</a>',
-        $drequest->generateURI(array(
-          'action' => 'lint',
-          'path' => $message['path'],
-        )),
+      $path = phutil_tag(
+        'a',
+        array(
+          'href' => $drequest->generateURI(array(
+            'action' => 'lint',
+            'path' => $message['path'],
+          )),
+        ),
         substr($message['path'], strlen($drequest->getPath()) + 1));
 
-      $line = hsprintf(
-        '<a href="%s">%s</a>',
-        $drequest->generateURI(array(
-          'action' => 'browse',
-          'path' => $message['path'],
-          'line' => $message['line'],
-          'commit' => $branch->getLintCommit(),
-        )),
+      $line = phutil_tag(
+        'a',
+        array(
+          'href' => $drequest->generateURI(array(
+            'action' => 'browse',
+            'path' => $message['path'],
+            'line' => $message['line'],
+            'commit' => $branch->getLintCommit(),
+          )),
+        ),
         $message['line']);
 
       $author = $message['authorPHID'];
@@ -66,44 +70,32 @@ final class DiffusionLintDetailsController extends DiffusionController {
       ->setPageSize($limit)
       ->setOffset($offset)
       ->setHasMorePages(count($messages) >= $limit)
-      ->setURI($this->getRequest()->getRequestURI(), 'offset');
-
-    $lint = $drequest->getLint();
-    $link = hsprintf(
-      '<a href="%s">%s</a>',
-      $drequest->generateURI(array(
-        'action' => 'lint',
-        'lint' => null,
-      )),
-      pht('Switch to Grouped View'));
+      ->setURI($request->getRequestURI(), 'offset');
 
     $content[] = id(new AphrontPanelView())
-      ->setHeader(
-        ($lint != '' ? $lint." \xC2\xB7 " : '').
-        pht('%d Lint Message(s)', count($messages)))
-      ->setCaption($link)
+      ->setNoBackground(true)
       ->appendChild($table)
       ->appendChild($pager);
 
-    $nav = $this->buildSideNav('lint', false);
-    $nav->appendChild($content);
     $crumbs = $this->buildCrumbs(
       array(
         'branch' => true,
         'path'   => true,
         'view'   => 'lint',
       ));
-    $nav->setCrumbs($crumbs);
 
     return $this->buildApplicationPage(
-      $nav,
       array(
-        'device' => true,
+        $crumbs,
+        $content,
+      ),
+      array(
         'title' =>
           array(
             pht('Lint'),
             $drequest->getRepository()->getCallsign(),
-      )));
+          ),
+      ));
   }
 
   private function loadLintMessages(

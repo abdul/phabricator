@@ -1,17 +1,17 @@
 <?php
 
-/**
- * @group countdown
- */
 final class PhabricatorCountdownViewController
   extends PhabricatorCountdownController {
 
   private $id;
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function willProcessRequest(array $data) {
     $this->id = $data['id'];
   }
-
 
   public function processRequest() {
 
@@ -22,7 +22,6 @@ final class PhabricatorCountdownViewController
       ->setViewer($user)
       ->withIDs(array($this->id))
       ->executeOne();
-
     if (!$countdown) {
       return new Aphront404Response();
     }
@@ -37,21 +36,23 @@ final class PhabricatorCountdownViewController
 
     $crumbs = $this
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName("C{$id}"));
+      ->addTextCrumb("C{$id}");
 
-    $header = id(new PhabricatorHeaderView())
-      ->setHeader($title);
+    $header = id(new PHUIHeaderView())
+      ->setHeader($title)
+      ->setUser($user)
+      ->setPolicyObject($countdown);
 
     $actions = $this->buildActionListView($countdown);
-    $properties = $this->buildPropertyListView($countdown);
+    $properties = $this->buildPropertyListView($countdown, $actions);
+
+    $object_box = id(new PHUIObjectBoxView())
+      ->setHeader($header)
+      ->addPropertyList($properties);
 
     $content = array(
       $crumbs,
-      $header,
-      $actions,
-      $properties,
+      $object_box,
       $countdown_view,
     );
 
@@ -59,7 +60,6 @@ final class PhabricatorCountdownViewController
       $content,
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 
@@ -79,7 +79,7 @@ final class PhabricatorCountdownViewController
 
     $view->addAction(
       id(new PhabricatorActionView())
-        ->setIcon('edit')
+        ->setIcon('fa-pencil')
         ->setName(pht('Edit Countdown'))
         ->setHref($this->getApplicationURI("edit/{$id}/"))
         ->setDisabled(!$can_edit)
@@ -87,7 +87,7 @@ final class PhabricatorCountdownViewController
 
     $view->addAction(
       id(new PhabricatorActionView())
-        ->setIcon('delete')
+        ->setIcon('fa-times')
         ->setName(pht('Delete Countdown'))
         ->setHref($this->getApplicationURI("delete/{$id}/"))
         ->setDisabled(!$can_edit)
@@ -96,14 +96,18 @@ final class PhabricatorCountdownViewController
     return $view;
   }
 
-  private function buildPropertyListView(PhabricatorCountdown $countdown) {
+  private function buildPropertyListView(
+    PhabricatorCountdown $countdown,
+    PhabricatorActionListView $actions) {
+
     $request = $this->getRequest();
     $viewer = $request->getUser();
 
     $this->loadHandles(array($countdown->getAuthorPHID()));
 
-    $view = id(new PhabricatorPropertyListView())
-      ->setUser($viewer);
+    $view = id(new PHUIPropertyListView())
+      ->setUser($viewer)
+      ->setActionList($actions);
 
     $view->addProperty(
       pht('Author'),

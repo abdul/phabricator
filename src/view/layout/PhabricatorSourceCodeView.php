@@ -6,6 +6,7 @@ final class PhabricatorSourceCodeView extends AphrontView {
   private $limit;
   private $uri;
   private $highlights = array();
+  private $canClickHighlight = true;
 
   public function setLimit($limit) {
     $this->limit = $limit;
@@ -27,12 +28,19 @@ final class PhabricatorSourceCodeView extends AphrontView {
     return $this;
   }
 
+  public function disableHighlightOnClick() {
+    $this->canClickHighlight = false;
+    return $this;
+  }
+
   public function render() {
     require_celerity_resource('phabricator-source-code-view-css');
     require_celerity_resource('syntax-highlighting-css');
 
     Javelin::initBehavior('phabricator-oncopy', array());
-    Javelin::initBehavior('phabricator-line-linker');
+    if ($this->canClickHighlight) {
+      Javelin::initBehavior('phabricator-line-linker');
+    }
 
     $line_number = 1;
 
@@ -53,6 +61,7 @@ final class PhabricatorSourceCodeView extends AphrontView {
           pht('...'));
       } else {
         $content_number = $line_number;
+        // NOTE: See phabricator-oncopy behavior.
         $content_line = hsprintf("\xE2\x80\x8B%s", $line);
       }
 
@@ -61,15 +70,22 @@ final class PhabricatorSourceCodeView extends AphrontView {
         $row_attributes['class'] = 'phabricator-source-highlight';
       }
 
-      $line_uri = $this->uri . "$" . $line_number;
-      $line_href = (string) new PhutilURI($line_uri);
+      if ($this->canClickHighlight) {
+        $line_uri = $this->uri.'$'.$line_number;
+        $line_href = (string) new PhutilURI($line_uri);
 
-      $tag_number = javelin_tag(
-        'a',
-        array(
-          'href' => $line_href
-        ),
-        $line_number);
+        $tag_number = javelin_tag(
+          'a',
+          array(
+            'href' => $line_href,
+          ),
+          $line_number);
+      } else {
+        $tag_number = javelin_tag(
+          'span',
+          array(),
+          $line_number);
+      }
 
       $rows[] = phutil_tag(
         'tr',
@@ -79,15 +95,16 @@ final class PhabricatorSourceCodeView extends AphrontView {
             'th',
             array(
               'class' => 'phabricator-source-line',
-              'sigil' => 'phabricator-source-line'
+              'sigil' => 'phabricator-source-line',
             ),
             $tag_number),
           phutil_tag(
             'td',
             array(
-              'class' => 'phabricator-source-code'
+              'class' => 'phabricator-source-code',
             ),
-            $content_line)));
+            $content_line),
+          ));
 
       if ($hit_limit) {
         break;
@@ -101,16 +118,13 @@ final class PhabricatorSourceCodeView extends AphrontView {
     $classes[] = 'remarkup-code';
     $classes[] = 'PhabricatorMonospaced';
 
-    return phutil_tag(
-      'div',
-      array(
-        'class' => 'phabricator-source-code-container',
-      ),
+    return phutil_tag_div(
+      'phabricator-source-code-container',
       javelin_tag(
         'table',
         array(
           'class' => implode(' ', $classes),
-          'sigil' => 'phabricator-source'
+          'sigil' => 'phabricator-source',
         ),
         phutil_implode_html('', $rows)));
   }

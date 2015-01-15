@@ -1,6 +1,6 @@
 <?php
 
-final class DiffusionHovercardEventListener extends PhutilEventListener {
+final class DiffusionHovercardEventListener extends PhabricatorEventListener {
 
   public function register() {
     $this->listen(PhabricatorEventType::TYPE_UI_DIDRENDERHOVERCARD);
@@ -28,7 +28,7 @@ final class DiffusionHovercardEventListener extends PhutilEventListener {
 
     $revision = PhabricatorEdgeQuery::loadDestinationPHIDs(
       $commit->getPHID(),
-      PhabricatorEdgeConfig::TYPE_COMMIT_HAS_DREV);
+      DiffusionCommitHasRevisionEdgeType::EDGECONST);
     $revision = reset($revision);
 
     $author = $commit->getAuthorPHID();
@@ -73,4 +73,3 @@ final class DiffusionHovercardEventListener extends PhutilEventListener {
   }
 
 }
-

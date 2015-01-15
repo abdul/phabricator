@@ -1,13 +1,8 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceThread extends ConpherenceDAO
   implements PhabricatorPolicyInterface {
 
-  protected $id;
-  protected $phid;
   protected $title;
   protected $messageCount;
   protected $recentParticipantPHIDs = array();
@@ -20,18 +15,36 @@ final class ConpherenceThread extends ConpherenceDAO
   private $widgetData = self::ATTACHABLE;
   private $images = array();
 
-  public function getConfiguration() {
+  public static function initializeNewThread(PhabricatorUser $sender) {
+    return id(new ConpherenceThread())
+      ->setMessageCount(0)
+      ->setTitle('');
+  }
+
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_SERIALIZATION => array(
         'recentParticipantPHIDs' => self::SERIALIZATION_JSON,
+      ),
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'title' => 'text255?',
+        'messageCount' => 'uint64',
+        'mailKey' => 'text20',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
       ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorConpherencePHIDTypeThread::TYPECONST);
+      PhabricatorConpherenceThreadPHIDType::TYPECONST);
   }
 
   public function save() {
@@ -187,6 +200,10 @@ final class ConpherenceThread extends ConpherenceDAO
     }
     $participants = $this->getParticipants();
     return isset($participants[$user->getPHID()]);
+  }
+
+  public function describeAutomaticCapability($capability) {
+    return pht('Participants in a thread can always view and edit it.');
   }
 
 }

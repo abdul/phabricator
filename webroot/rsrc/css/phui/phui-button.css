@@ -6,6 +6,16 @@
 button,
 a.button {
   font: 13px/1.231 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+button::-moz-focus-inner {
+  padding: 0;
+  border: 0;
 }
 
 button,
@@ -14,13 +24,12 @@ a.button:visited,
 input[type="submit"] {
   background-color: #3477ad;
   color: white;
-  text-shadow: 0 -1px rgba(0,0,0,0.75);
   border: 1px solid #19558D;
   cursor: pointer;
   font-weight: bold;
   font-size: 13px;
   display: inline-block;
-  padding: 3px 10px 4px;
+  padding: 3px 12px 4px;
   text-align: center;
   white-space: nowrap;
   border-radius: 3px;
@@ -67,7 +76,17 @@ a.grey:visited {
   border-color: {$lightgreyborder};
   color: {$darkgreytext};
   border-bottom-color: {$greyborder};
-  text-shadow: none;
+}
+
+button.simple,
+input[type="submit"].simple,
+a.simple,
+a.simple:visited {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  color: {$bluetext};
+  border: 1px solid {$lightblueborder};
 }
 
 a.disabled,
@@ -87,12 +106,12 @@ body a.button:active {
 button.grey:active,
 a.grey:active,
 button.grey_active,
-a.button.dropdown-open {
+a.button.phuix-dropdown-open {
   background-color: #7d7d7d;
   box-shadow: inset 0 0 4px rgba(0,0,0,.2);
 }
 
-a.dropdown-open {
+a.phuix-dropdown-open {
   color: {$greytext};
 }
 
@@ -100,6 +119,20 @@ a.button:hover,
 button:hover {
   text-decoration: none;
   box-shadow: inset 0 0 5px rgba(0,0,0,.4);
+}
+
+a.button.simple:hover,
+button.simple:hover {
+  background-color: #fff;
+  border: 1px solid {$lightgreyborder};
+  background-image: none;
+  border-bottom: 1px solid {$greyborder};
+  box-shadow: none;
+}
+
+a.button.simple.phuix-dropdown-open {
+  background-color: #fff;
+  box-shadow: none;
 }
 
 a.button.grey:hover,
@@ -118,7 +151,7 @@ body button.disabled:active {
 button.small,
 a.small,
 a.small:visited {
-  padding: 2px 7px;
+  padding: 2px 8px;
   height: auto;
   font-size: 11px;
   line-height: 16px;
@@ -134,8 +167,7 @@ button.link {
   font-size: inherit;
   border-bottom: none;
   text-decoration: none;
-  text-shadow: none;
-  color: #3b5998;
+  color: #19558D;
   -webkit-box-shadow: none;
   -moz-box-shadow: none;
   box-shadow: none;
@@ -145,38 +177,32 @@ button.link:hover {
   text-decoration: underline;
 }
 
-.dropdown-menu-frame {
+.phuix-dropdown-menu {
   position: absolute;
   width: 240px;
   background: #fff;
   margin-top: -1px;
   padding: 5px 0;
-  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.3);
-  border: 1px solid #d7d7d7;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  border: 1px solid {$lightgreyborder};
+  border-bottom: 1px solid {$greyborder};
   border-radius: 3px;
+  margin-bottom: 16px;
 }
 
-.dropdown-menu-frame a,
-.dropdown-menu-frame span {
-  display: block;
-  padding: 2px 10px;
-  clear: both;
-  line-height: 20px;
-  color: {$darkgreytext};
-  white-space: nowrap;
+.phuix-dropdown-menu a:focus {
+  /* We automatically focus links in dropdown menus for assistive devices, but
+     this is distracting for visual user agents. */
+  outline: none;
 }
 
-.dropdown-menu-frame span {
-  color: {$lightgreytext};
+a.policy-control {
+  width: 240px;
+  text-align: left;
 }
 
-.dropdown-menu-frame a:hover {
-  background: #005588;
-  background-image: linear-gradient(to bottom, #3b86c4, #2b628f);
-  background-image: -webkit-linear-gradient(top, #3b86c4, #2b628f);
-  color: white;
-  cursor: pointer;
-  text-decoration: none;
+a.policy-control .caret {
+  float: right;
 }
 
 a.toggle {
@@ -219,9 +245,37 @@ a.toggle-fixed {
   content: "";
 }
 
+.caret-right {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: middle;
+  border-left: 7px solid {$greytext};
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  content: "";
+  margin-bottom: 4px;
+}
+
+.caret-left {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: middle;
+  border-right: 7px solid {$greytext};
+  border-bottom: 5px solid transparent;
+  border-top: 5px solid transparent;
+  content: "";
+  margin-bottom: 4px;
+}
+
 .dropdown .caret {
   margin-top: 7px;
   margin-left: 4px;
+}
+
+.small.dropdown .caret {
+  margin-top: 6px;
 }
 
 .grey.dropdown .caret {
@@ -237,10 +291,14 @@ a.toggle-fixed {
   display: inline-block;
   position: absolute;
   top: 5px;
-  left: 8px;
+  left: 10px;
 }
 
-.button.has_icon .phui-button-text {
+.phui-button-bar .button .phui-icon-view {
+  left: 12px;
+}
+
+.button.has-icon .phui-button-text {
   margin-left: 16px;
 }
 
@@ -253,7 +311,7 @@ a.toggle-fixed {
 }
 
 .button.big.has-icon .phui-button-text {
-  margin-left: 36px;
+  margin-left: 40px;
   font-size: 14px;
   display: block;
 }
@@ -263,4 +321,28 @@ a.toggle-fixed {
   font-size: 12px;
   line-height: 15px;
   font-weight: normal;
+}
+
+/* PHUI Button Bar */
+
+.phui-button-bar a.button {
+  display: inline-block;
+  height: 16px;
+  width: 12px;
+}
+
+.phui-button-bar .phui-button-bar-first {
+  border-top-right-radius: 0px;
+  border-bottom-right-radius: 0px;
+}
+
+.phui-button-bar .phui-button-bar-middle {
+  border-radius: 0;
+  border-left: none;
+}
+
+.phui-button-bar .phui-button-bar-last {
+  border-left: none;
+  border-top-left-radius: 0px;
+  border-bottom-left-radius: 0px;
 }

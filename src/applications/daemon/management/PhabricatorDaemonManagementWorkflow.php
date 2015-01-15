@@ -1,13 +1,11 @@
 <?php
 
 abstract class PhabricatorDaemonManagementWorkflow
-  extends PhutilArgumentWorkflow {
+  extends PhabricatorManagementWorkflow {
 
-  public function isExecutable() {
-    return true;
-  }
+  private $runDaemonsAsUser = null;
 
-  protected function loadAvailableDaemonClasses() {
+  protected final function loadAvailableDaemonClasses() {
     $loader = new PhutilSymbolLoader();
     return $loader
       ->setAncestorClass('PhutilDaemon')
@@ -15,12 +13,12 @@ abstract class PhabricatorDaemonManagementWorkflow
       ->selectSymbolsWithoutLoading();
   }
 
-  public function getPIDDirectory() {
+  protected final function getPIDDirectory() {
     $path = PhabricatorEnv::getEnvConfig('phd.pid-directory');
     return $this->getControlDirectory($path);
   }
 
-  public function getLogDirectory() {
+  protected final function getLogDirectory() {
     $path = PhabricatorEnv::getEnvConfig('phd.log-directory');
     return $this->getControlDirectory($path);
   }
@@ -39,29 +37,39 @@ abstract class PhabricatorDaemonManagementWorkflow
     return $path;
   }
 
-  public function loadRunningDaemons() {
-    $results = array();
+  protected final function loadRunningDaemons() {
+    $daemons = array();
 
     $pid_dir = $this->getPIDDirectory();
     $pid_files = Filesystem::listDirectory($pid_dir);
-    if (!$pid_files) {
-      return $results;
-    }
 
     foreach ($pid_files as $pid_file) {
-      $pid_data = Filesystem::readFile($pid_dir.'/'.$pid_file);
-      $dict = json_decode($pid_data, true);
-      if (!is_array($dict)) {
-        // Just return a hanging reference, since control code needs to be
-        // robust against unusual system states.
-        $dict = array();
-      }
-      $ref = PhabricatorDaemonReference::newFromDictionary($dict);
-      $ref->setPIDFile($pid_dir.'/'.$pid_file);
-      $results[] = $ref;
+      $daemons[] = PhabricatorDaemonReference::newFromFile(
+        $pid_dir.'/'.$pid_file);
     }
 
-    return $results;
+    return $daemons;
+  }
+
+  protected final function loadAllRunningDaemons() {
+    $local_daemons = $this->loadRunningDaemons();
+
+    $local_ids = array();
+    foreach ($local_daemons as $daemon) {
+      $daemon_log = $daemon->getDaemonLog();
+
+      if ($daemon_log) {
+        $local_ids[] = $daemon_log->getID();
+      }
+    }
+
+    $remote_daemons = id(new PhabricatorDaemonLogQuery())
+      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->withoutIDs($local_ids)
+      ->withStatus(PhabricatorDaemonLogQuery::STATUS_ALIVE)
+      ->execute();
+
+    return array_merge($local_daemons, $remote_daemons);
   }
 
   private function findDaemonClass($substring) {
@@ -83,7 +91,7 @@ abstract class PhabricatorDaemonManagementWorkflow
     if (count($match) == 0) {
       throw new PhutilArgumentUsageException(
         pht(
-          "No daemons match '%s'! Use 'phd list' for a list of avialable ".
+          "No daemons match '%s'! Use 'phd list' for a list of available ".
           "daemons.",
           $substring));
     } else if (count($match) > 1) {
@@ -97,21 +105,64 @@ abstract class PhabricatorDaemonManagementWorkflow
     return head($match);
   }
 
+  protected final function launchDaemon(
+    $class,
+    array $argv,
+    $debug,
+    $run_as_current_user = false) {
 
-  protected function launchDaemon($class, array $argv, $debug) {
     $daemon = $this->findDaemonClass($class);
     $console = PhutilConsole::getConsole();
 
+    if (!$run_as_current_user) {
+      // Check if the script is started as the correct user
+      $phd_user = PhabricatorEnv::getEnvConfig('phd.user');
+      $current_user = posix_getpwuid(posix_geteuid());
+      $current_user = $current_user['name'];
+      if ($phd_user && $phd_user != $current_user) {
+        if ($debug) {
+          throw new PhutilArgumentUsageException(pht(
+            'You are trying to run a daemon as a nonstandard user, '.
+            'and `phd` was not able to `sudo` to the correct user. '."\n".
+            'Phabricator is configured to run daemons as "%s", '.
+            'but the current user is "%s". '."\n".
+            'Use `sudo` to run as a different user, pass `--as-current-user` '.
+            'to ignore this warning, or edit `phd.user` '.
+            'to change the configuration.', $phd_user, $current_user));
+        } else {
+          $this->runDaemonsAsUser = $phd_user;
+          $console->writeOut(pht('Starting daemons as %s', $phd_user)."\n");
+        }
+      }
+    }
+
     if ($debug) {
-      $console->writeOut(
-        pht(
-          'Launching daemon "%s" in debug mode (not daemonized).',
-          $daemon)."\n");
+      if ($argv) {
+        $console->writeOut(
+          pht(
+            "Launching daemon \"%s\" in debug mode (not daemonized) ".
+            "with arguments %s.\n",
+            $daemon,
+            csprintf('%LR', $argv)));
+      } else {
+        $console->writeOut(
+          pht(
+            "Launching daemon \"%s\" in debug mode (not daemonized).\n",
+            $daemon));
+      }
     } else {
-      $console->writeOut(
-        pht(
-          'Launching daemon "%s".',
-          $daemon)."\n");
+      if ($argv) {
+        $console->writeOut(
+          pht(
+            "Launching daemon \"%s\" with arguments %s.\n",
+            $daemon,
+            csprintf('%LR', $argv)));
+      } else {
+        $console->writeOut(
+          pht(
+            "Launching daemon \"%s\".\n",
+            $daemon));
+      }
     }
 
     foreach ($argv as $key => $arg) {
@@ -165,10 +216,53 @@ abstract class PhabricatorDaemonManagementWorkflow
 
       phutil_passthru('(cd %s && exec %C)', $daemon_script_dir, $command);
     } else {
-      $future = new ExecFuture('exec %C', $command);
-      // Play games to keep 'ps' looking reasonable.
-      $future->setCWD($daemon_script_dir);
-      $future->resolvex();
+      try {
+        $this->executeDaemonLaunchCommand(
+          $command,
+          $daemon_script_dir,
+          $this->runDaemonsAsUser);
+      } catch (Exception $e) {
+        // Retry without sudo
+        $console->writeOut(pht(
+          "sudo command failed. Starting daemon as current user\n"));
+        $this->executeDaemonLaunchCommand(
+          $command,
+          $daemon_script_dir);
+      }
+    }
+  }
+
+  private function executeDaemonLaunchCommand(
+    $command,
+    $daemon_script_dir,
+    $run_as_user = null) {
+
+    $is_sudo = false;
+    if ($run_as_user) {
+      // If anything else besides sudo should be
+      // supported then insert it here (runuser, su, ...)
+      $command = csprintf(
+        'sudo -En -u %s -- %C',
+        $run_as_user,
+        $command);
+      $is_sudo = true;
+    }
+    $future = new ExecFuture('exec %C', $command);
+    // Play games to keep 'ps' looking reasonable.
+    $future->setCWD($daemon_script_dir);
+    list($stdout, $stderr) = $future->resolvex();
+
+    if ($is_sudo) {
+      // On OSX, `sudo -n` exits 0 when the user does not have permission to
+      // switch accounts without a password. This is not consistent with
+      // sudo on Linux, and seems buggy/broken. Check for this by string
+      // matching the output.
+      if (preg_match('/sudo: a password is required/', $stderr)) {
+        throw new Exception(
+          pht(
+            'sudo exited with a zero exit code, but emitted output '.
+            'consistent with failure under OSX.'));
+      }
     }
   }
 
@@ -199,7 +293,7 @@ abstract class PhabricatorDaemonManagementWorkflow
     }
   }
 
-  protected function willLaunchDaemons() {
+  protected final function willLaunchDaemons() {
     $console = PhutilConsole::getConsole();
     $console->writeErr(pht('Preparing to launch daemons.')."\n");
 
@@ -211,7 +305,7 @@ abstract class PhabricatorDaemonManagementWorkflow
 /* -(  Commands  )----------------------------------------------------------- */
 
 
-  protected function executeStartCommand() {
+  protected final function executeStartCommand($keep_leases = false) {
     $console = PhutilConsole::getConsole();
 
     $running = $this->loadRunningDaemons();
@@ -233,6 +327,16 @@ abstract class PhabricatorDaemonManagementWorkflow
       }
     }
 
+    if ($keep_leases) {
+      $console->writeErr("%s\n", pht('Not touching active task queue leases.'));
+    } else {
+      $console->writeErr("%s\n", pht('Freeing active task leases...'));
+      $count = $this->freeActiveLeases();
+      $console->writeErr(
+        "%s\n",
+        pht('Freed %s task lease(s).', new PhutilNumber($count)));
+    }
+
     $daemons = array(
       array('PhabricatorRepositoryPullLocalDaemon', array()),
       array('PhabricatorGarbageCollectorDaemon', array()),
@@ -250,18 +354,30 @@ abstract class PhabricatorDaemonManagementWorkflow
       $this->launchDaemon($name, $argv, $is_debug = false);
     }
 
-    $console->writeErr(pht("Done.")."\n");
-
+    $console->writeErr(pht('Done.')."\n");
     return 0;
   }
 
+  protected final function executeStopCommand(
+    array $pids,
+    $grace_period,
+    $force) {
 
-  protected function executeStopCommand(array $pids) {
     $console = PhutilConsole::getConsole();
 
     $daemons = $this->loadRunningDaemons();
     if (!$daemons) {
-      $console->writeErr(pht('There are no running Phabricator daemons.')."\n");
+      $survivors = array();
+      if (!$pids) {
+        $survivors = $this->processRogueDaemons(
+          $grace_period,
+          $warn = true,
+          $force);
+      }
+      if (!$survivors) {
+        $console->writeErr(pht(
+          'There are no running Phabricator daemons.')."\n");
+      }
       return 0;
     }
 
@@ -290,45 +406,13 @@ abstract class PhabricatorDaemonManagementWorkflow
     }
 
     if (empty($running)) {
-      $console->writeErr(pht("No daemons to kill.")."\n");
+      $console->writeErr(pht('No daemons to kill.')."\n");
       return 0;
     }
 
     $all_daemons = $running;
-    foreach ($running as $key => $daemon) {
-      $pid = $daemon->getPID();
-      $name = $daemon->getName();
-
-      $console->writeErr(pht("Stopping daemon '%s' (%s)...", $name, $pid)."\n");
-      if (!$daemon->isRunning()) {
-        $console->writeErr(pht("Daemon is not running.")."\n");
-        unset($running[$key]);
-        $daemon->updateStatus(PhabricatorDaemonLog::STATUS_EXITED);
-      } else {
-        posix_kill($pid, SIGINT);
-      }
-    }
-
-    $start = time();
-    do {
-      foreach ($running as $key => $daemon) {
-        $pid = $daemon->getPID();
-        if (!$daemon->isRunning()) {
-          $console->writeOut(pht('Daemon %s exited normally.', $pid)."\n");
-          unset($running[$key]);
-        }
-      }
-      if (empty($running)) {
-        break;
-      }
-      usleep(100000);
-    } while (time() < $start + 15);
-
-    foreach ($running as $key => $daemon) {
-      $pid = $daemon->getPID();
-      $console->writeErr(pht('Sending daemon %s a SIGKILL.', $pid)."\n");
-      posix_kill($pid, SIGKILL);
-    }
+    // don't specify force here as that's about rogue daemons
+    $this->sendStopSignals($running, $grace_period);
 
     foreach ($all_daemons as $daemon) {
       if ($daemon->getPIDFile()) {
@@ -336,7 +420,132 @@ abstract class PhabricatorDaemonManagementWorkflow
       }
     }
 
+    $this->processRogueDaemons($grace_period, !$pids, $force);
+
     return 0;
+  }
+
+  private function processRogueDaemons($grace_period, $warn, $force_stop) {
+    $console = PhutilConsole::getConsole();
+
+    $rogue_daemons = PhutilDaemonOverseer::findRunningDaemons();
+    if ($rogue_daemons) {
+      if ($force_stop) {
+        $stop_rogue_daemons = $this->buildRogueDaemons($rogue_daemons);
+        $survivors = $this->sendStopSignals(
+          $stop_rogue_daemons,
+          $grace_period,
+          $force_stop);
+        if ($survivors) {
+          $console->writeErr(pht(
+            'Unable to stop processes running without pid files. Try running '.
+            'this command again with sudo.'."\n"));
+        }
+      } else if ($warn) {
+        $console->writeErr($this->getForceStopHint($rogue_daemons)."\n");
+      }
+    }
+    return $rogue_daemons;
+  }
+
+  private function getForceStopHint($rogue_daemons) {
+    $debug_output = '';
+    foreach ($rogue_daemons as $rogue) {
+      $debug_output .= $rogue['pid'].' '.$rogue['command']."\n";
+    }
+    return pht(
+      'There are processes running that look like Phabricator daemons but '.
+      'have no corresponding PID files:'."\n\n".'%s'."\n\n".
+      'Stop these processes by re-running this command with the --force '.
+      'parameter.',
+      $debug_output);
+  }
+
+  private function buildRogueDaemons(array $daemons) {
+    $rogue_daemons = array();
+    foreach ($daemons as $pid => $data) {
+      $rogue_daemons[] =
+        PhabricatorDaemonReference::newFromRogueDictionary($data);
+    }
+    return $rogue_daemons;
+  }
+
+  private function sendStopSignals($daemons, $grace_period, $force = false) {
+    // If we're doing a graceful shutdown, try SIGINT first.
+    if ($grace_period) {
+      $daemons = $this->sendSignal($daemons, SIGINT, $grace_period, $force);
+    }
+
+    // If we still have daemons, SIGTERM them.
+    if ($daemons) {
+      $daemons = $this->sendSignal($daemons, SIGTERM, 15, $force);
+    }
+
+    // If the overseer is still alive, SIGKILL it.
+    if ($daemons) {
+      $daemons = $this->sendSignal($daemons, SIGKILL, 0, $force);
+    }
+    return $daemons;
+  }
+
+  private function sendSignal(array $daemons, $signo, $wait, $force = false) {
+    $console = PhutilConsole::getConsole();
+
+    foreach ($daemons as $key => $daemon) {
+      $pid = $daemon->getPID();
+      $name = $daemon->getName();
+
+      if (!$pid && !$force) {
+        $console->writeOut("%s\n", pht("Daemon '%s' has no PID!", $name));
+        unset($daemons[$key]);
+        continue;
+      }
+
+      switch ($signo) {
+        case SIGINT:
+          $message = pht("Interrupting daemon '%s' (%s)...", $name, $pid);
+          break;
+        case SIGTERM:
+          $message = pht("Terminating daemon '%s' (%s)...", $name, $pid);
+          break;
+        case SIGKILL:
+          $message = pht("Killing daemon '%s' (%s)...", $name, $pid);
+          break;
+      }
+
+      $console->writeOut("%s\n", $message);
+      posix_kill($pid, $signo);
+    }
+
+    if ($wait) {
+      $start = PhabricatorTime::getNow();
+      do {
+        foreach ($daemons as $key => $daemon) {
+          $pid = $daemon->getPID();
+          if (!$daemon->isRunning()) {
+            $console->writeOut(pht('Daemon %s exited.', $pid)."\n");
+            unset($daemons[$key]);
+          }
+        }
+        if (empty($daemons)) {
+          break;
+        }
+        usleep(100000);
+      } while (PhabricatorTime::getNow() < $start + $wait);
+    }
+
+    return $daemons;
+  }
+
+  private function freeActiveLeases() {
+    $task_table = id(new PhabricatorWorkerActiveTask());
+    $conn_w = $task_table->establishConnection('w');
+    queryfx(
+      $conn_w,
+      'UPDATE %T SET leaseExpires = UNIX_TIMESTAMP()
+        WHERE leaseExpires > UNIX_TIMESTAMP()',
+      $task_table->getTableName());
+    return $conn_w->getAffectedRows();
   }
 
 }

@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group paste
- */
 final class PhabricatorPasteQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -87,7 +84,7 @@ final class PhabricatorPasteQuery
     return $pastes;
   }
 
-  protected function willFilterPage(array $pastes) {
+  protected function didFilterPage(array $pastes) {
     if ($this->needRawContent) {
       $pastes = $this->loadRawContent($pastes);
     }
@@ -157,14 +154,22 @@ final class PhabricatorPasteQuery
   }
 
   private function getContentCacheKey(PhabricatorPaste $paste) {
-    return 'P'.$paste->getID().':content/'.$paste->getLanguage();
+    return implode(
+      ':',
+      array(
+        'P'.$paste->getID(),
+        $paste->getFilePHID(),
+        $paste->getLanguage(),
+      ));
   }
 
   private function loadRawContent(array $pastes) {
     $file_phids = mpull($pastes, 'getFilePHID');
-    $files = id(new PhabricatorFile())->loadAllWhere(
-      'phid IN (%Ls)',
-      $file_phids);
+    $files = id(new PhabricatorFileQuery())
+      ->setParentQuery($this)
+      ->setViewer($this->getViewer())
+      ->withPHIDs($file_phids)
+      ->execute();
     $files = mpull($files, null, 'getPHID');
 
     foreach ($pastes as $key => $paste) {
@@ -173,7 +178,14 @@ final class PhabricatorPasteQuery
         unset($pastes[$key]);
         continue;
       }
-      $paste->attachRawContent($file->loadFileData());
+      try {
+        $paste->attachRawContent($file->loadFileData());
+      } catch (Exception $ex) {
+        // We can hit various sorts of file storage issues here. Just drop the
+        // paste if the file is dead.
+        unset($pastes[$key]);
+        continue;
+      }
     }
 
     return $pastes;
@@ -224,7 +236,6 @@ final class PhabricatorPasteQuery
     return $results;
   }
 
-
   private function buildContent(PhabricatorPaste $paste) {
     $language = $paste->getLanguage();
     $source = $paste->getRawContent();
@@ -238,6 +249,10 @@ final class PhabricatorPasteQuery
         $language,
         $source);
     }
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorPasteApplication';
   }
 
 }

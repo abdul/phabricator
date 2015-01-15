@@ -2,16 +2,98 @@
 
 abstract class PhabricatorPHIDType {
 
-  abstract public function getTypeConstant();
+  final public function getTypeConstant() {
+    $class = new ReflectionClass($this);
+
+    $const = $class->getConstant('TYPECONST');
+    if ($const === false) {
+      throw new Exception(
+        pht(
+          'PHIDType class "%s" must define an TYPECONST property.',
+          get_class($this)));
+    }
+
+    if (!is_string($const) || !preg_match('/^[A-Z]{4}$/', $const)) {
+      throw new Exception(
+        pht(
+          'PHIDType class "%s" has an invalid TYPECONST property. PHID '.
+          'constants must be a four character uppercase string.',
+          get_class($this)));
+    }
+
+    return $const;
+  }
+
   abstract public function getTypeName();
 
   public function newObject() {
     return null;
   }
 
-  abstract public function loadObjects(
+  public function getTypeIcon() {
+    return null;
+  }
+
+
+  /**
+   * Get the class name for the application this type belongs to.
+   *
+   * @return string|null Class name of the corresponding application, or null
+   *   if the type is not bound to an application.
+   */
+  public function getPHIDTypeApplicationClass() {
+    // TODO: Some day this should probably be abstract, but for now it only
+    // affects global search and there's no real burning need to go classify
+    // every PHID type.
+    return null;
+  }
+
+  /**
+   * Build a @{class:PhabricatorPolicyAwareQuery} to load objects of this type
+   * by PHID.
+   *
+   * If you can not build a single query which satisfies this requirement, you
+   * can provide a dummy implementation for this method and overload
+   * @{method:loadObjects} instead.
+   *
+   * @param PhabricatorObjectQuery Query being executed.
+   * @param list<phid> PHIDs to load.
+   * @return PhabricatorPolicyAwareQuery Query object which loads the
+   *   specified PHIDs when executed.
+   */
+  abstract protected function buildQueryForObjects(
     PhabricatorObjectQuery $query,
     array $phids);
+
+
+  /**
+   * Load objects of this type, by PHID. For most PHID types, it is only
+   * necessary to implement @{method:buildQueryForObjects} to get object
+   * loading to work.
+   *
+   * @param PhabricatorObjectQuery Query being executed.
+   * @param list<phid> PHIDs to load.
+   * @return list<wild> Corresponding objects.
+   */
+  public function loadObjects(
+    PhabricatorObjectQuery $query,
+    array $phids) {
+
+    $object_query = $this->buildQueryForObjects($query, $phids)
+      ->setViewer($query->getViewer())
+      ->setParentQuery($query);
+
+    // If the user doesn't have permission to use the application at all,
+    // just mark all the PHIDs as filtered. This primarily makes these
+    // objects show up as "Restricted" instead of "Unknown" when loaded as
+    // handles, which is technically true.
+    if (!$object_query->canViewerUseQueryApplication()) {
+      $object_query->addPolicyFilteredPHIDs(array_fuse($phids));
+      return array();
+    }
+
+    return $object_query->execute();
+  }
 
 
   /**
@@ -38,7 +120,7 @@ abstract class PhabricatorPHIDType {
    * @param PhabricatorHandleQuery          Issuing query object.
    * @param list<PhabricatorObjectHandle>   Handles to populate with data.
    * @param list<Object>                    Objects for these PHIDs loaded by
-   *                                        @{method:loadObjects()}.
+   *                                        @{method:buildQueryForObjects()}.
    * @return void
    */
   abstract public function loadHandles(
@@ -53,9 +135,18 @@ abstract class PhabricatorPHIDType {
   public function loadNamedObjects(
     PhabricatorObjectQuery $query,
     array $names) {
-    throw new Exception("Not implemented!");
+    throw new PhutilMethodNotImplementedException();
   }
 
+
+  /**
+   * Get all known PHID types.
+   *
+   * To get PHID types a given user has access to, see
+   * @{method:getAllInstalledTypes}.
+   *
+   * @return dict<string, PhabricatorPHIDType> Map of type constants to types.
+   */
   public static function getAllTypes() {
     static $types;
     if ($types === null) {
@@ -84,6 +175,50 @@ abstract class PhabricatorPHIDType {
     }
 
     return $types;
+  }
+
+
+  /**
+   * Get all PHID types of applications installed for a given viewer.
+   *
+   * @param PhabricatorUser Viewing user.
+   * @return dict<string, PhabricatorPHIDType> Map of constants to installed
+   *  types.
+   */
+  public static function getAllInstalledTypes(PhabricatorUser $viewer) {
+    $all_types = self::getAllTypes();
+
+    $installed_types = array();
+
+    $app_classes = array();
+    foreach ($all_types as $key => $type) {
+      $app_class = $type->getPHIDTypeApplicationClass();
+
+      if ($app_class === null) {
+        // If the PHID type isn't bound to an application, include it as
+        // installed.
+        $installed_types[$key] = $type;
+        continue;
+      }
+
+      // Otherwise, we need to check if this application is installed before
+      // including the PHID type.
+      $app_classes[$app_class][$key] = $type;
+    }
+
+    if ($app_classes) {
+      $apps = id(new PhabricatorApplicationQuery())
+        ->setViewer($viewer)
+        ->withInstalled(true)
+        ->withClasses(array_keys($app_classes))
+        ->execute();
+
+      foreach ($apps as $app_class => $app) {
+        $installed_types += $app_classes[$app_class];
+      }
+    }
+
+    return $installed_types;
   }
 
 }

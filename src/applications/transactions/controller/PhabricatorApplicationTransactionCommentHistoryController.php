@@ -5,6 +5,10 @@ final class PhabricatorApplicationTransactionCommentHistoryController
 
   private $phid;
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function willProcessRequest(array $data) {
     $this->phid = $data['phid'];
   }
@@ -25,6 +29,11 @@ final class PhabricatorApplicationTransactionCommentHistoryController
     if (!$xaction->getComment()) {
       // You can't view history of a transaction with no comments.
       return new Aphront404Response();
+    }
+
+    if ($xaction->getComment()->getIsRemoved()) {
+      // You can't view history of a transaction with a removed comment.
+      return new Aphront400Response();
     }
 
     $comments = id(new PhabricatorApplicationTransactionCommentQuery())
@@ -59,11 +68,13 @@ final class PhabricatorApplicationTransactionCommentHistoryController
       ->setUser($user)
       ->setObjectPHID($obj_phid)
       ->setTransactions($xactions)
-      ->setShowEditActions(false);
+      ->setShowEditActions(false)
+      ->setHideCommentOptions(true);
 
     $dialog = id(new AphrontDialogView())
       ->setUser($user)
       ->setWidth(AphrontDialogView::WIDTH_FULL)
+      ->setFlush(true)
       ->setTitle(pht('Comment History'));
 
     $dialog->appendChild($view);

@@ -1,6 +1,7 @@
 <?php
 
-final class DifferentialRevisionEditController extends DifferentialController {
+final class DifferentialRevisionEditController
+  extends DifferentialController {
 
   private $id;
 
@@ -22,16 +23,20 @@ final class DifferentialRevisionEditController extends DifferentialController {
         ->withIDs(array($this->id))
         ->needRelationships(true)
         ->needReviewerStatus(true)
+        ->needActiveDiffs(true)
+        ->requireCapabilities(
+          array(
+            PhabricatorPolicyCapability::CAN_VIEW,
+            PhabricatorPolicyCapability::CAN_EDIT,
+          ))
         ->executeOne();
       if (!$revision) {
         return new Aphront404Response();
       }
     } else {
-      $revision = new DifferentialRevision();
-      $revision->attachRelationships(array());
+      $revision = DifferentialRevision::initializeNewRevision($viewer);
+      $revision->attachReviewerStatus(array());
     }
-
-    $aux_fields = $this->loadAuxiliaryFields($revision);
 
     $diff_id = $request->getInt('diffID');
     if ($diff_id) {
@@ -44,73 +49,90 @@ final class DifferentialRevisionEditController extends DifferentialController {
       }
       if ($diff->getRevisionID()) {
         // TODO: Redirect?
-        throw new Exception("This diff is already attached to a revision!");
+        throw new Exception('This diff is already attached to a revision!');
       }
     } else {
       $diff = null;
     }
 
-    $errors = array();
+    if (!$diff) {
+      if (!$revision->getID()) {
+        throw new Exception(
+          pht('You can not create a new revision without a diff!'));
+      }
+    } else {
+      // TODO: It would be nice to show the diff being attached in the UI.
+    }
 
+    $field_list = PhabricatorCustomField::getObjectFields(
+      $revision,
+      PhabricatorCustomField::ROLE_EDIT);
+    $field_list
+      ->setViewer($viewer)
+      ->readFieldsFromStorage($revision);
 
+    if ($request->getStr('viaDiffView') && $diff) {
+      $repo_key = id(new DifferentialRepositoryField())->getFieldKey();
+      $repository_field = idx(
+        $field_list->getFields(),
+        $repo_key);
+      if ($repository_field) {
+        $repository_field->setValue($request->getStr($repo_key));
+      }
+      $view_policy_key = id(new DifferentialViewPolicyField())->getFieldKey();
+      $view_policy_field = idx(
+        $field_list->getFields(),
+        $view_policy_key);
+      if ($view_policy_field) {
+        $view_policy_field->setValue($diff->getViewPolicy());
+      }
+    }
+
+    $validation_exception = null;
     if ($request->isFormPost() && !$request->getStr('viaDiffView')) {
-      foreach ($aux_fields as $aux_field) {
-        $aux_field->setValueFromRequest($request);
-        try {
-          $aux_field->validateField();
-        } catch (DifferentialFieldValidationException $ex) {
-          $errors[] = $ex->getMessage();
+
+      $editor = id(new DifferentialTransactionEditor())
+        ->setActor($viewer)
+        ->setContentSourceFromRequest($request)
+        ->setContinueOnNoEffect(true);
+
+      $xactions = $field_list->buildFieldTransactionsFromRequest(
+        new DifferentialTransaction(),
+        $request);
+
+      if ($diff) {
+        $repository_phid = null;
+        $repository_tokenizer = $request->getArr(
+          id(new DifferentialRepositoryField())->getFieldKey());
+        if ($repository_tokenizer) {
+          $repository_phid = reset($repository_tokenizer);
         }
+
+        $xactions[] = id(new DifferentialTransaction())
+          ->setTransactionType(DifferentialTransaction::TYPE_UPDATE)
+          ->setNewValue($diff->getPHID());
+
+        $editor->setRepositoryPHIDOverride($repository_phid);
       }
 
-      if (!$errors) {
-        $is_new = !$revision->getID();
-        $user = $request->getUser();
+      $comments = $request->getStr('comments');
+      if (strlen($comments)) {
+        $xactions[] = id(new DifferentialTransaction())
+          ->setTransactionType(PhabricatorTransactions::TYPE_COMMENT)
+          ->attachComment(
+            id(new DifferentialTransactionComment())
+              ->setContent($comments));
+      }
 
-        $event = new PhabricatorEvent(
-          PhabricatorEventType::TYPE_DIFFERENTIAL_WILLEDITREVISION,
-            array(
-              'revision'      => $revision,
-              'new'           => $is_new,
-            ));
-
-        $event->setUser($user);
-        $event->setAphrontRequest($request);
-        PhutilEventEngine::dispatchEvent($event);
-
-        $editor = new DifferentialRevisionEditor($revision);
-        $editor->setActor($request->getUser());
-        if ($diff) {
-          $editor->addDiff($diff, $request->getStr('comments'));
-        }
-        $editor->setAuxiliaryFields($aux_fields);
-        $editor->save();
-
-        $event = new PhabricatorEvent(
-          PhabricatorEventType::TYPE_DIFFERENTIAL_DIDEDITREVISION,
-            array(
-              'revision'      => $revision,
-              'new'           => $is_new,
-            ));
-        $event->setUser($user);
-        $event->setAphrontRequest($request);
-        PhutilEventEngine::dispatchEvent($event);
-
-        return id(new AphrontRedirectResponse())
-          ->setURI('/D'.$revision->getID());
+      try {
+        $editor->applyTransactions($revision, $xactions);
+        $revision_uri = '/D'.$revision->getID();
+        return id(new AphrontRedirectResponse())->setURI($revision_uri);
+      } catch (PhabricatorApplicationTransactionValidationException $ex) {
+        $validation_exception = $ex;
       }
     }
 
-    $aux_phids = array();
-    foreach ($aux_fields as $key => $aux_field) {
-      $aux_phids[$key] = $aux_field->getRequiredHandlePHIDsForRevisionEdit();
-    }
-    $phids = array_mergev($aux_phids);
-    $phids = array_unique($phids);
-    $handles = $this->loadViewerHandles($phids);
-    foreach ($aux_fields as $key => $aux_field) {
-      $aux_field->setHandles(array_select_keys($handles, $aux_phids[$key]));
-    }
 
     $form = new AphrontFormView();
     $form->setUser($request->getUser());
@@ -122,13 +144,6 @@ final class DifferentialRevisionEditController extends DifferentialController {
       $form->setAction('/differential/revision/edit/'.$revision->getID().'/');
     } else {
       $form->setAction('/differential/revision/edit/');
-    }
-
-    $error_view = null;
-    if ($errors) {
-      $error_view = id(new AphrontErrorView())
-        ->setTitle(pht('Form Errors'))
-        ->setErrors($errors);
     }
 
     if ($diff && $revision->getID()) {
@@ -146,14 +161,7 @@ final class DifferentialRevisionEditController extends DifferentialController {
           id(new AphrontFormDividerControl()));
     }
 
-    $preview = array();
-    foreach ($aux_fields as $aux_field) {
-      $control = $aux_field->renderEditControl();
-      if ($control) {
-        $form->appendChild($control);
-      }
-      $preview[] = $aux_field->renderEditPreview();
-    }
+    $field_list->appendFieldsToForm($form);
 
     $submit = id(new AphrontFormSubmitControl())
       ->setValue('Save');
@@ -169,59 +177,34 @@ final class DifferentialRevisionEditController extends DifferentialController {
     if ($revision->getID()) {
       if ($diff) {
         $title = pht('Update Differential Revision');
-        $crumbs->addCrumb(
-          id(new PhabricatorCrumbView())
-            ->setName('D'.$revision->getID())
-            ->setHref('/differential/diff/'.$diff->getID().'/'));
+        $crumbs->addTextCrumb(
+          'D'.$revision->getID(),
+          '/differential/diff/'.$diff->getID().'/');
       } else {
         $title = pht('Edit Differential Revision');
-        $crumbs->addCrumb(
-          id(new PhabricatorCrumbView())
-            ->setName('D'.$revision->getID())
-            ->setHref('/D'.$revision->getID()));
+        $crumbs->addTextCrumb(
+          'D'.$revision->getID(),
+          '/D'.$revision->getID());
       }
     } else {
       $title = pht('Create New Differential Revision');
     }
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($title)
-      ->setFormError($error_view)
+      ->setValidationException($validation_exception)
       ->setForm($form);
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title));
+    $crumbs->addTextCrumb($title);
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
         $form_box,
-        $preview),
+      ),
       array(
         'title' => $title,
-        'device' => true,
       ));
-  }
-
-  private function loadAuxiliaryFields(DifferentialRevision $revision) {
-
-    $user = $this->getRequest()->getUser();
-
-    $aux_fields = DifferentialFieldSelector::newSelector()
-      ->getFieldSpecifications();
-    foreach ($aux_fields as $key => $aux_field) {
-      $aux_field->setRevision($revision);
-      if (!$aux_field->shouldAppearOnEdit()) {
-        unset($aux_fields[$key]);
-      } else {
-        $aux_field->setUser($user);
-      }
-    }
-
-    return DifferentialAuxiliaryField::loadFromStorage(
-      $revision,
-      $aux_fields);
   }
 
 }

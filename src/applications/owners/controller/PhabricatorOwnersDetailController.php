@@ -29,9 +29,10 @@ final class PhabricatorOwnersDetailController
     }
 
     if ($repository_phids) {
-      $repositories = id(new PhabricatorRepository())->loadAllWhere(
-        'phid in (%Ls)',
-        array_keys($repository_phids));
+      $repositories = id(new PhabricatorRepositoryQuery())
+        ->setViewer($user)
+        ->withPHIDs(array_keys($repository_phids))
+        ->execute();
       $repositories = mpull($repositories, null, 'getPHID');
     } else {
       $repositories = array();
@@ -85,7 +86,7 @@ final class PhabricatorOwnersDetailController
           'callsign' => $repo->getCallsign(),
           'branch'   => $repo->getDefaultBranch(),
           'path'     => $path->getPath(),
-          'action'   => 'browse'
+          'action'   => 'browse',
         ));
       $repo_name = phutil_tag('strong', array(), $repo->getName());
       $path_link = phutil_tag(
@@ -138,23 +139,23 @@ final class PhabricatorOwnersDetailController
 
     $commit_views = array();
 
-    $commit_uri = id(new PhutilURI('/audit/view/packagecommits/'))
+    $commit_uri = id(new PhutilURI('/audit/'))
       ->setQueryParams(
         array(
-          'phid'    => $package->getPHID(),
+          'auditorPHIDs' => $package->getPHID(),
         ));
 
-    $attention_query = id(new PhabricatorAuditCommitQuery())
-      ->withPackagePHIDs(array($package->getPHID()))
-      ->withStatus(PhabricatorAuditCommitQuery::STATUS_CONCERN)
+    $attention_commits = id(new DiffusionCommitQuery())
+      ->setViewer($request->getUser())
+      ->withAuditorPHIDs(array($package->getPHID()))
+      ->withAuditStatus(DiffusionCommitQuery::AUDIT_STATUS_CONCERN)
       ->needCommitData(true)
-      ->needAudits(true)
-      ->setLimit(10);
-    $attention_commits = $attention_query->execute();
+      ->setLimit(10)
+      ->execute();
     if ($attention_commits) {
-      $view = new PhabricatorAuditCommitListView();
-      $view->setUser($user);
-      $view->setCommits($attention_commits);
+      $view = id(new PhabricatorAuditListView())
+        ->setUser($user)
+        ->setCommits($attention_commits);
 
       $commit_views[] = array(
         'view'    => $view,
@@ -169,17 +170,17 @@ final class PhabricatorOwnersDetailController
       );
     }
 
-    $all_query = id(new PhabricatorAuditCommitQuery())
-      ->withPackagePHIDs(array($package->getPHID()))
+    $all_commits = id(new DiffusionCommitQuery())
+      ->setViewer($request->getUser())
+      ->withAuditorPHIDs(array($package->getPHID()))
       ->needCommitData(true)
-      ->needAudits(true)
-      ->setLimit(100);
-    $all_commits = $all_query->execute();
+      ->setLimit(100)
+      ->execute();
 
-    $view = new PhabricatorAuditCommitListView();
-    $view->setUser($user);
-    $view->setCommits($all_commits);
-    $view->setNoDataString(pht('No commits in this package.'));
+    $view = id(new PhabricatorAuditListView())
+      ->setUser($user)
+      ->setCommits($all_commits)
+      ->setNoDataString(pht('No commits in this package.'));
 
     $commit_views[] = array(
       'view'    => $view,
@@ -223,8 +224,7 @@ final class PhabricatorOwnersDetailController
         $nav,
       ),
       array(
-        'title' => pht("Package %s", $package->getName()),
-        'device' => true,
+        'title' => pht('Package %s', $package->getName()),
       ));
   }
 

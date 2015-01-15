@@ -7,13 +7,23 @@ final class PhabricatorDaemonConsoleController
     $request = $this->getRequest();
     $user = $request->getUser();
 
-    $completed = id(new PhabricatorWorkerArchiveTask())->loadAllWhere(
-      'dateModified > %d',
-      time() - (60 * 15));
+    $window_start = (time() - (60 * 15));
+
+    // Assume daemons spend about 250ms second in overhead per task acquiring
+    // leases and doing other bookkeeping. This is probably an over-estimation,
+    // but we'd rather show that utilization is too high than too low.
+    $lease_overhead = 0.250;
+
+    $completed = id(new PhabricatorWorkerArchiveTaskQuery())
+      ->withDateModifiedSince($window_start)
+      ->execute();
 
     $failed = id(new PhabricatorWorkerActiveTask())->loadAllWhere(
       'failureTime > %d',
-      time() - (60 * 15));
+      $window_start);
+
+    $usage_total = 0;
+    $usage_start = PHP_INT_MAX;
 
     $completed_info = array();
     foreach ($completed as $completed_task) {
@@ -27,6 +37,11 @@ final class PhabricatorDaemonConsoleController
       $completed_info[$class]['n']++;
       $duration = $completed_task->getDuration();
       $completed_info[$class]['duration'] += $duration;
+
+      // NOTE: Duration is in microseconds, but we're just using seconds to
+      // compute utilization.
+      $usage_total += $lease_overhead + ($duration / 1000000);
+      $usage_start = min($usage_start, $completed_task->getDateModified());
     }
 
     $completed_info = isort($completed_info, 'n');
@@ -41,9 +56,47 @@ final class PhabricatorDaemonConsoleController
     }
 
     if ($failed) {
+      // Add the time it takes to restart the daemons. This includes a guess
+      // about other overhead of 2X.
+      $usage_total += PhutilDaemonOverseer::RESTART_WAIT * count($failed) * 2;
+      foreach ($failed as $failed_task) {
+        $usage_start = min($usage_start, $failed_task->getFailureTime());
+      }
+
       $rows[] = array(
         phutil_tag('em', array(), pht('Temporary Failures')),
         count($failed),
+        null,
+      );
+    }
+
+    $logs = id(new PhabricatorDaemonLogQuery())
+      ->setViewer($user)
+      ->withStatus(PhabricatorDaemonLogQuery::STATUS_ALIVE)
+      ->setAllowStatusWrites(true)
+      ->execute();
+
+    $taskmasters = 0;
+    foreach ($logs as $log) {
+      if ($log->getDaemon() == 'PhabricatorTaskmasterDaemon') {
+        $taskmasters++;
+      }
+    }
+
+    if ($taskmasters && $usage_total) {
+      // Total number of wall-time seconds the daemons have been running since
+      // the oldest event. For very short times round up to 15s so we don't
+      // render any ridiculous numbers if you reload the page immediately after
+      // restarting the daemons.
+      $available_time = $taskmasters * max(15, (time() - $usage_start));
+
+      // Percentage of those wall-time seconds we can account for, which the
+      // daemons spent doing work:
+      $used_time = ($usage_total / $available_time);
+
+      $rows[] = array(
+        phutil_tag('em', array(), pht('Queue Utilization (Approximate)')),
+        sprintf('%.1f%%', 100 * $used_time),
         null,
       );
     }
@@ -64,71 +117,33 @@ final class PhabricatorDaemonConsoleController
         'n',
       ));
 
-    $completed_header = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Recently Completed Tasks (Last 15m)'));
-
-    $completed_panel = new AphrontPanelView();
+    $completed_panel = new PHUIObjectBoxView();
+    $completed_panel->setHeaderText(
+      pht('Recently Completed Tasks (Last 15m)'));
     $completed_panel->appendChild($completed_table);
-    $completed_panel->setNoBackground();
-
-    $logs = id(new PhabricatorDaemonLogQuery())
-      ->setViewer($user)
-      ->withStatus(PhabricatorDaemonLogQuery::STATUS_ALIVE)
-      ->execute();
-
-    $daemon_header = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Active Daemons'));
 
     $daemon_table = new PhabricatorDaemonLogListView();
     $daemon_table->setUser($user);
     $daemon_table->setDaemonLogs($logs);
 
-    $tasks = id(new PhabricatorWorkerActiveTask())->loadAllWhere(
-      'leaseOwner IS NOT NULL');
+    $daemon_panel = new PHUIObjectBoxView();
+    $daemon_panel->setHeaderText(pht('Active Daemons'));
+    $daemon_panel->appendChild($daemon_table);
 
-    $rows = array();
-    foreach ($tasks as $task) {
-      $rows[] = array(
-        $task->getID(),
-        $task->getTaskClass(),
-        $task->getLeaseOwner(),
-        $task->getLeaseExpires() - time(),
-        $task->getFailureCount(),
-        phutil_tag(
-          'a',
-          array(
-            'href' => '/daemon/task/'.$task->getID().'/',
-            'class' => 'button small grey',
-          ),
-          pht('View Task')),
-      );
-    }
 
-    $leased_table = new AphrontTableView($rows);
-    $leased_table->setHeaders(
-      array(
-        pht('ID'),
-        pht('Class'),
-        pht('Owner'),
-        pht('Expires'),
-        pht('Failures'),
-        '',
-      ));
-    $leased_table->setColumnClasses(
-      array(
-        'n',
-        'wide',
-        '',
-        '',
-        'n',
-        'action',
-      ));
-    $leased_table->setNoDataString(pht('No tasks are leased by workers.'));
+    $tasks = id(new PhabricatorWorkerLeaseQuery())
+      ->setSkipLease(true)
+      ->withLeasedTasks(true)
+      ->setLimit(100)
+      ->execute();
 
-    $leased_panel = new AphrontPanelView();
-    $leased_panel->setHeader('Leased Tasks');
-    $leased_panel->appendChild($leased_table);
-    $leased_panel->setNoBackground();
+    $tasks_table = id(new PhabricatorDaemonTasksTableView())
+      ->setTasks($tasks)
+      ->setNoDataString(pht('No tasks are leased by workers.'));
+
+    $leased_panel = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Leased Tasks'))
+      ->appendChild($tasks_table);
 
     $task_table = new PhabricatorWorkerActiveTask();
     $queued = queryfx_all(
@@ -158,33 +173,42 @@ final class PhabricatorDaemonConsoleController
       ));
     $queued_table->setNoDataString(pht('Task queue is empty.'));
 
-    $queued_panel = new AphrontPanelView();
-    $queued_panel->setHeader(pht('Queued Tasks'));
+    $queued_panel = new PHUIObjectBoxView();
+    $queued_panel->setHeaderText(pht('Queued Tasks'));
     $queued_panel->appendChild($queued_table);
-    $queued_panel->setNoBackground();
+
+    $upcoming = id(new PhabricatorWorkerLeaseQuery())
+      ->setLimit(10)
+      ->setSkipLease(true)
+      ->execute();
+
+    $upcoming_panel = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Next In Queue'))
+      ->appendChild(
+        id(new PhabricatorDaemonTasksTableView())
+          ->setTasks($upcoming)
+          ->setNoDataString(pht('Task queue is empty.')));
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Console')));
+    $crumbs->addTextCrumb(pht('Console'));
 
     $nav = $this->buildSideNavView();
     $nav->selectFilter('/');
     $nav->appendChild(
       array(
         $crumbs,
-        $completed_header,
         $completed_panel,
-        $daemon_header,
-        $daemon_table,
+        $daemon_panel,
         $queued_panel,
         $leased_panel,
+        $upcoming_panel,
       ));
 
     return $this->buildApplicationPage(
       $nav,
       array(
         'title' => pht('Console'),
+        'device' => false,
       ));
   }
 

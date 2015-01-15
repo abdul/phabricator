@@ -1,13 +1,9 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceNotificationPanelController
   extends ConpherenceController {
 
   public function processRequest() {
-
     $request = $this->getRequest();
     $user = $request->getUser();
     $conpherences = array();
@@ -72,23 +68,21 @@ final class ConpherenceNotificationPanelController
       }
       $content = $view->render();
     } else {
-      $content = hsprintf(
-        '<div class="phabricator-notification no-notifications">%s</div>',
+      $content = phutil_tag_div(
+        'phabricator-notification no-notifications',
         pht('You have no messages.'));
     }
 
     $content = hsprintf(
       '<div class="phabricator-notification-header">%s</div>'.
-      '%s'.
-      '<div class="phabricator-notification-view-all">%s</div>',
-      pht('Messages'),
-      $content,
+      '%s',
       phutil_tag(
         'a',
         array(
           'href' => '/conpherence/',
         ),
-        'View All Conpherences'));
+        pht('Messages')),
+      $content);
 
     $unread = id(new ConpherenceParticipantCountQuery())
       ->withParticipantPHIDs(array($user->getPHID()))
@@ -103,4 +97,5 @@ final class ConpherenceNotificationPanelController
 
     return id(new AphrontAjaxResponse())->setContent($json);
   }
+
 }

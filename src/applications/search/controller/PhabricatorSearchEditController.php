@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group search
- */
 final class PhabricatorSearchEditController
   extends PhabricatorSearchBaseController {
 
@@ -66,11 +63,6 @@ final class PhabricatorSearchEditController
       }
     }
 
-    if ($errors) {
-      $errors = id(new AphrontErrorView())
-        ->setErrors($errors);
-    }
-
     $form = id(new AphrontFormView())
       ->setUser($user);
 
@@ -92,15 +84,13 @@ final class PhabricatorSearchEditController
       $title = pht('Save Query');
     }
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($title)
-      ->setFormError($errors)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title));
+    $crumbs->addTextCrumb($title);
 
     return $this->buildApplicationPage(
       array(
@@ -109,9 +99,7 @@ final class PhabricatorSearchEditController
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
-
 
 }

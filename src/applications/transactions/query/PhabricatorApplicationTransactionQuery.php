@@ -7,6 +7,7 @@ abstract class PhabricatorApplicationTransactionQuery
   private $objectPHIDs;
   private $authorPHIDs;
   private $transactionTypes;
+  private $reversePaging = true;
 
   private $needComments = true;
   private $needHandles  = true;
@@ -17,8 +18,13 @@ abstract class PhabricatorApplicationTransactionQuery
     return array();
   }
 
+  public function setReversePaging($bool) {
+    $this->reversePaging = $bool;
+    return $this;
+  }
+
   protected function getReversePaging() {
-    return true;
+    return $this->reversePaging;
   }
 
   public function withPHIDs(array $phids) {
@@ -65,6 +71,10 @@ abstract class PhabricatorApplicationTransactionQuery
 
     $xactions = $table->loadAllFromArray($data);
 
+    foreach ($xactions as $xaction) {
+      $xaction->attachViewer($this->getViewer());
+    }
+
     if ($this->needComments) {
       $comment_phids = array_filter(mpull($xactions, 'getCommentPHID'));
 
@@ -91,6 +101,31 @@ abstract class PhabricatorApplicationTransactionQuery
         $xaction->setCommentNotLoaded(true);
       }
     }
+
+    return $xactions;
+  }
+
+  protected function willFilterPage(array $xactions) {
+    $object_phids = array_keys(mpull($xactions, null, 'getObjectPHID'));
+
+    $objects = id(new PhabricatorObjectQuery())
+      ->setViewer($this->getViewer())
+      ->setParentQuery($this)
+      ->withPHIDs($object_phids)
+      ->execute();
+
+    foreach ($xactions as $key => $xaction) {
+      $object_phid = $xaction->getObjectPHID();
+      if (empty($objects[$object_phid])) {
+        unset($xactions[$key]);
+        continue;
+      }
+      $xaction->attachObject($objects[$object_phid]);
+    }
+
+    // NOTE: We have to do this after loading objects, because the objects
+    // may help determine which handles are required (for example, in the case
+    // of custom fields).
 
     if ($this->needHandles) {
       $phids = array();
@@ -154,6 +189,12 @@ abstract class PhabricatorApplicationTransactionQuery
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+
+  public function getQueryApplicationClass() {
+    // TODO: Sort this out?
+    return null;
   }
 
 }

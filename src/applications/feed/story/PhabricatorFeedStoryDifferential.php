@@ -48,13 +48,84 @@ final class PhabricatorFeedStoryDifferential extends PhabricatorFeedStory {
     $actor_link = $this->linkTo($actor_phid);
     $revision_link = $this->linkTo($revision_phid);
 
-    $verb = DifferentialAction::getActionPastTenseVerb($action);
-
-    $one_line = hsprintf(
-      '%s %s revision %s',
-      $actor_link,
-      $verb,
-      $revision_link);
+    switch ($action) {
+      case DifferentialAction::ACTION_COMMENT:
+        $one_line = pht('%s commented on revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_ACCEPT:
+        $one_line = pht('%s accepted revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_REJECT:
+        $one_line = pht('%s requested changes to revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_RETHINK:
+        $one_line = pht('%s planned changes to revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_ABANDON:
+        $one_line = pht('%s abandoned revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_CLOSE:
+        $one_line = pht('%s closed revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_REQUEST:
+        $one_line = pht('%s requested a review of revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_RECLAIM:
+        $one_line = pht('%s reclaimed revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_UPDATE:
+        $one_line = pht('%s updated revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_RESIGN:
+        $one_line = pht('%s resigned from revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_SUMMARIZE:
+        $one_line = pht('%s summarized revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_TESTPLAN:
+        $one_line = pht('%s explained the test plan for revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_CREATE:
+        $one_line = pht('%s created revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_ADDREVIEWERS:
+        $one_line = pht('%s added reviewers to revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_ADDCCS:
+        $one_line = pht('%s added CCs to revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_CLAIM:
+        $one_line = pht('%s commandeered revision %s',
+          $actor_link, $revision_link);
+      break;
+      case DifferentialAction::ACTION_REOPEN:
+        $one_line = pht('%s reopened revision %s',
+        $actor_link, $revision_link);
+      break;
+      case DifferentialTransaction::TYPE_INLINE:
+        $one_line = pht('%s added inline comments to %s',
+        $actor_link, $revision_link);
+      break;
+      default:
+        $one_line = pht('%s edited %s',
+        $actor_link, $revision_link);
+      break;
+    }
 
     return $one_line;
   }
@@ -67,11 +138,87 @@ final class PhabricatorFeedStoryDifferential extends PhabricatorFeedStory {
     $revision_uri = PhabricatorEnv::getURI($revision_handle->getURI());
 
     $action = $this->getValue('action');
-    $verb = DifferentialAction::getActionPastTenseVerb($action);
 
-    $text = "{$author_name} {$verb} revision {$revision_title} {$revision_uri}";
+    switch ($action) {
+      case DifferentialAction::ACTION_COMMENT:
+        $one_line = pht('%s commented on revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_ACCEPT:
+        $one_line = pht('%s accepted revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_REJECT:
+        $one_line = pht('%s requested changes to revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_RETHINK:
+        $one_line = pht('%s planned changes to revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_ABANDON:
+        $one_line = pht('%s abandoned revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_CLOSE:
+        $one_line = pht('%s closed revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_REQUEST:
+        $one_line = pht('%s requested a review of revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_RECLAIM:
+        $one_line = pht('%s reclaimed revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_UPDATE:
+        $one_line = pht('%s updated revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_RESIGN:
+        $one_line = pht('%s resigned from revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_SUMMARIZE:
+        $one_line = pht('%s summarized revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_TESTPLAN:
+        $one_line = pht('%s explained the test plan for revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_CREATE:
+        $one_line = pht('%s created revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_ADDREVIEWERS:
+        $one_line = pht('%s added reviewers to revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_ADDCCS:
+        $one_line = pht('%s added CCs to revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_CLAIM:
+        $one_line = pht('%s commandeered revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialAction::ACTION_REOPEN:
+        $one_line = pht('%s reopened revision %s %s',
+          $author_name, $revision_title, $revision_uri);
+      break;
+      case DifferentialTransaction::TYPE_INLINE:
+        $one_line = pht('%s added inline comments to %s %s',
+          $author_name, $revision_title, $revision_uri);
+        break;
+      default:
+        $one_line = pht('%s edited %s %s',
+          $author_name, $revision_title, $revision_uri);
+        break;
+    }
 
-    return $text;
+    return $one_line;
   }
 
   public function getNotificationAggregations() {
@@ -87,70 +234,5 @@ final class PhabricatorFeedStoryDifferential extends PhabricatorFeedStory {
         => 'PhabricatorFeedStoryDifferentialAggregate',
     );
   }
-
-  // TODO: At some point, make feed rendering not terrible and remove this
-  // hacky mess.
-  public function renderForAsanaBridge($implied_context = false) {
-    $data = $this->getStoryData();
-    $comment = $data->getValue('feedback_content');
-
-    $author_name = $this->getHandle($this->getAuthorPHID())->getName();
-    $action = $this->getValue('action');
-    $verb = DifferentialAction::getActionPastTenseVerb($action);
-
-    $engine = PhabricatorMarkupEngine::newMarkupEngine(array())
-      ->setConfig('viewer', new PhabricatorUser())
-      ->setMode(PhutilRemarkupEngine::MODE_TEXT);
-
-    $revision_phid = $this->getPrimaryObjectPHID();
-    $revision_name = $this->getHandle($revision_phid)->getFullName();
-
-    if ($implied_context) {
-      $title = "{$author_name} {$verb} this revision.";
-    } else {
-      $title = "{$author_name} {$verb} revision {$revision_name}.";
-    }
-
-    if (strlen($comment)) {
-      $comment = $engine->markupText($comment);
-
-      $title .= "\n\n";
-      $title .= $comment;
-    }
-
-    // Roughly render inlines into the comment.
-    $comment_id = $data->getValue('temporaryCommentID');
-    if ($comment_id) {
-      $inlines = id(new DifferentialInlineCommentQuery())
-        ->withCommentIDs(array($comment_id))
-        ->execute();
-      if ($inlines) {
-        $title .= "\n\n";
-        $title .= pht('Inline Comments');
-        $title .= "\n";
-        $changeset_ids = mpull($inlines, 'getChangesetID');
-        $changesets = id(new DifferentialChangeset())->loadAllWhere(
-          'id IN (%Ld)',
-          $changeset_ids);
-        foreach ($inlines as $inline) {
-          $changeset = idx($changesets, $inline->getChangesetID());
-          if (!$changeset) {
-            continue;
-          }
-
-          $filename = $changeset->getDisplayFilename();
-          $linenumber = $inline->getLineNumber();
-          $inline_text = $engine->markupText($inline->getContent());
-          $inline_text = rtrim($inline_text);
-
-          $title .= "{$filename}:{$linenumber} {$inline_text}\n";
-        }
-      }
-    }
-
-
-    return $title;
-  }
-
 
 }

@@ -5,7 +5,7 @@ final class LiskIsolationTestDAO extends LiskDAO {
   protected $name;
   protected $phid;
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
     ) + parent::getConfiguration();
@@ -17,8 +17,8 @@ final class LiskIsolationTestDAO extends LiskDAO {
 
   public function establishLiveConnection($mode) {
     throw new LiskIsolationTestDAOException(
-      "Isolation failure! DAO is attempting to connect to an external ".
-      "resource!");
+      'Isolation failure! DAO is attempting to connect to an external '.
+      'resource!');
   }
 
   public function getConnectionNamespace() {

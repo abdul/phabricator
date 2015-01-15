@@ -15,16 +15,22 @@ final class DifferentialInlineCommentEditController
     $revision_id = $this->revisionID;
     $changeset_id = $this->getChangesetID();
 
-    if (!id(new DifferentialRevision())->load($revision_id)) {
-      throw new Exception("Invalid revision ID!");
+    $viewer = $this->getRequest()->getUser();
+    $revision = id(new DifferentialRevisionQuery())
+      ->setViewer($viewer)
+      ->withIDs(array($revision_id))
+      ->executeOne();
+
+    if (!$revision) {
+      throw new Exception('Invalid revision ID!');
     }
 
     if (!id(new DifferentialChangeset())->load($changeset_id)) {
-      throw new Exception("Invalid changeset ID!");
+      throw new Exception('Invalid changeset ID!');
     }
 
     return id(new DifferentialInlineComment())
-      ->setRevisionID($revision_id)
+      ->setRevision($revision)
       ->setChangesetID($changeset_id);
   }
 
@@ -40,7 +46,7 @@ final class DifferentialInlineCommentEditController
 
     $inline = $this->loadComment($id);
     if (!$this->canEditInlineComment($user, $inline)) {
-      throw new Exception("That comment is not editable!");
+      throw new Exception('That comment is not editable!');
     }
     return $inline;
   }
@@ -54,8 +60,9 @@ final class DifferentialInlineCommentEditController
       return false;
     }
 
-    // Saved comments may not be edited.
-    if ($inline->getCommentID()) {
+    // Saved comments may not be edited, for now, although the schema now
+    // supports it.
+    if (!$inline->isDraft()) {
       return false;
     }
 
@@ -67,4 +74,23 @@ final class DifferentialInlineCommentEditController
     return true;
   }
 
+  protected function deleteComment(PhabricatorInlineCommentInterface $inline) {
+    $inline->openTransaction();
+      DifferentialDraft::deleteHasDraft(
+        $inline->getAuthorPHID(),
+        $inline->getRevisionPHID(),
+        $inline->getPHID());
+      $inline->delete();
+    $inline->saveTransaction();
+  }
+
+  protected function saveComment(PhabricatorInlineCommentInterface $inline) {
+    $inline->openTransaction();
+      $inline->save();
+      DifferentialDraft::markHasDraft(
+        $inline->getAuthorPHID(),
+        $inline->getRevisionPHID(),
+        $inline->getPHID());
+    $inline->saveTransaction();
+  }
 }

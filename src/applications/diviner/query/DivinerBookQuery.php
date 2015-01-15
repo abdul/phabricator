@@ -1,7 +1,6 @@
 <?php
 
-final class DivinerBookQuery
-  extends PhabricatorCursorPagedPolicyAwareQuery {
+final class DivinerBookQuery extends PhabricatorCursorPagedPolicyAwareQuery {
 
   private $ids;
   private $phids;
@@ -64,6 +63,10 @@ final class DivinerBookQuery
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorDivinerApplication';
   }
 
 }

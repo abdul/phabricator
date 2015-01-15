@@ -18,6 +18,11 @@
   max-width: 800px;
 }
 
+/* Fix so that Phriction Document preview is the same width as the document */
+.device-desktop .phui-remarkup-preview .phui-document-view {
+  width: 800px;
+}
+
 .phui-document-sidenav {
   position:absolute;
   width: 200px;
@@ -34,7 +39,7 @@
 }
 
 .device-phone .phui-sidenav-view .phui-document-inner {
- margin: 0;
+  margin: 0;
 }
 
 .phui-sidenav-view .phui-document-inner {
@@ -62,43 +67,38 @@
   float: right;
 }
 
-.phui-document-content .phabricator-header-shell {
+.phui-document-content .phui-header-shell {
   border-top: none;
   border-bottom: 1px solid {$lightblueborder};
 }
 
 .phui-document-content
-  .phabricator-header-shell.phabricator-header-no-backgound {
+  .phui-header-shell.phui-header-no-backgound {
   border-bottom: 1px solid {$thinblueborder};
   margin: 0 0 16px 0;
 }
 
 .phui-document-content
-  .phabricator-header-shell.phabricator-header-no-backgound
-  .phabricator-header-view {
- padding: 8px 0 4px;
- font-size: 14px;
+  .phui-header-shell.phui-header-no-backgound
+  .phui-header-view {
+  padding: 8px 0 4px;
+  font-size: 15px;
 }
 
-.phui-document-content .phabricator-header-view {
-  padding: 16px;
+.phui-document-content .phui-header-view {
   color: {$bluetext};
   text-shadow: 0 1px 2px #fff;
 }
 
-.phui-document-content .phabricator-property-list-container {
+.phui-document-content .phui-property-list-container {
   border-color: #dde8ef;
 }
 
-.phui-document-content .phabricator-property-list-view {
+.phui-document-content .phui-property-list-view {
   border: none;
   box-shadow: none;
   margin: 0;
   background-color: #f6f7f8;
-}
-
-.phui-document-content .phabricator-property-list-value {
-  width: auto;
 }
 
 .phui-document-content {
@@ -109,11 +109,6 @@
      the ".group" class. See T3150.
   */
   overflow: hidden;
-}
-
-.device-desktop .phui-document-content .phabricator-action-list-view {
-  margin: 10px 10px 0 0;
-  background: {$lightgreybackground};
 }
 
 .device-phone .phui-document-content .phabricator-action-list-view {
@@ -132,16 +127,12 @@
 
 .device-desktop .phui-document-content .phabricator-action-list-view {
   position: absolute;
-  top: 50px;
-  right: -172px;
+  top: 16px;
+  right: -160px;
   float: none;
-  background: #fff;
   border-radius: 0;
   box-shadow: none;
   border: none;
-  border-top: 1px solid {$thinblueborder};
-  border-bottom: 1px solid {$thinblueborder};
-  border-right: 1px solid {$thinblueborder};
   width: 160px;
 }
 
@@ -155,5 +146,9 @@
 }
 
 .device-desktop .phui-document-offset {
-  padding-right: 160px;
+  padding-right: 120px;
+}
+
+.phui-document-view .phui-property-list-view {
+  border-bottom: 1px solid {$thinblueborder};
 }

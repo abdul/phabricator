@@ -142,10 +142,13 @@ final class DiffusionPathChange {
     return array_select_keys($result, $direct);
   }
 
-  final public static function convertToDifferentialChangesets(array $changes) {
+  final public static function convertToDifferentialChangesets(
+    PhabricatorUser $user,
+    array $changes) {
     assert_instances_of($changes, 'DiffusionPathChange');
     $arcanist_changes = self::convertToArcanistChanges($changes);
-    $diff = DifferentialDiff::newFromRawChanges($arcanist_changes);
+    $diff = DifferentialDiff::newEphemeralFromRawChanges(
+      $arcanist_changes);
     return $diff->getChangesets();
   }
 
@@ -168,9 +171,11 @@ final class DiffusionPathChange {
       'commit' => $commit_dict,
       'commitData' => $commit_data_dict,
       'fileType' => $this->getFileType(),
+      'changeType' => $this->getChangeType(),
       'targetPath' =>  $this->getTargetPath(),
       'targetCommitIdentifier' => $this->getTargetCommitIdentifier(),
-      'awayPaths' => $this->getAwayPaths());
+      'awayPaths' => $this->getAwayPaths(),
+    );
   }
 
   public static function newFromConduit(array $dicts) {
@@ -186,6 +191,7 @@ final class DiffusionPathChange {
         ->setCommit($commit)
         ->setCommitData($commit_data)
         ->setFileType($dict['fileType'])
+        ->setChangeType($dict['changeType'])
         ->setTargetPath($dict['targetPath'])
         ->setTargetCommitIdentifier($dict['targetCommitIdentifier'])
         ->setAwayPaths($dict['awayPaths']);

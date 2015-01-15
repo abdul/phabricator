@@ -1,0 +1,146 @@
+/**
+ * @provides phui-header-view-css
+ */
+
+.phui-header-shell {
+  background-color: #e0e3ec;
+  border-width: 1px 0;
+  border-style: solid;
+  border-color: {$hovergrey};
+  overflow: hidden;
+}
+
+body .phui-header-shell.phui-header-no-backgound {
+  background-color: transparent;
+  border: none;
+}
+
+body .phui-header-shell.phui-bleed-header {
+  background-color: #fff;
+  border-bottom: 1px solid {$thinblueborder};
+  width: auto;
+  margin: 16px;
+}
+
+body .phui-header-shell.phui-bleed-header
+  .phui-header-view {
+  padding: 8px 24px 8px 0;
+  color: {$bluetext};
+}
+
+.phui-header-shell + .phabricator-form-view {
+  border-top-width: 0;
+}
+
+.phui-property-list-view + .diviner-document-section {
+  margin-top: -1px;
+}
+
+.phui-header-view {
+  padding: 16px;
+  font-size: 15px;
+  color: {$darkbluetext};
+  position: relative;
+}
+
+.phui-header-view a,
+.phui-header-view a.simple {
+  color: {$darkbluetext};
+}
+
+.phui-header-view .phui-header-action-links {
+  float: right;
+}
+
+.phui-object-box .phui-header-view .phui-header-action-links {
+  margin-right: 4px;
+  margin-top: -2px;
+  margin-bottom: -3px;
+}
+
+.phui-object-box .phui-header-has-image .phui-header-view
+ .phui-header-action-links {
+  margin-top: 8px;
+}
+
+.phui-document-view .phui-header-view .phui-header-action-links {
+  margin-top: 4px;
+}
+
+.device-phone .phui-header-action-link .phui-button-text {
+  visibility: hidden;
+  width: 0;
+  margin-left: 8px;
+}
+
+.phui-header-divider {
+  margin: 0 4px;
+  font-weight: normal;
+  color: {$lightbluetext};
+}
+
+body.device-phone .phui-header-view {
+  padding: 12px 8px;
+}
+
+.phui-header-tags {
+  margin-left: 12px;
+  font-size: 13px;
+}
+
+.phui-header-tags .phui-tag-view {
+  margin-left: 4px;
+}
+
+.phui-header-image {
+  display: inline-block;
+  background-repeat: no-repeat;
+  border: 2px solid white;
+  width: 50px;
+  height: 50px;
+  margin: 12px;
+  float: left;
+  border-radius: 2px;
+}
+
+.phui-header-subheader {
+  font-weight: normal;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.phui-header-subheader .phui-icon-view {
+  display: inline-block;
+  margin: -2px 4px -2px 0;
+  font-size: 15px;
+}
+
+.phui-header-subheader,
+.phui-header-subheader .policy-link {
+  color: {$darkbluetext};
+}
+
+.phui-header-subheader .phui-header-status-dark {
+  color: {$indigo};
+  text-shadow: 0 1px #fff;
+}
+
+.phui-header-subheader .phui-header-status-dark .phui-icon-view {
+  color: {$indigo};
+}
+
+.phui-header-subheader .phui-header-status-red {
+  color: {$red};
+}
+
+.phui-header-subheader .phui-header-status-green {
+  color: {$green};
+}
+
+.phui-header-action-links .phui-mobile-menu {
+  display: none;
+}
+
+.device .phui-header-action-links .phui-mobile-menu {
+  display: inline-block;
+}

@@ -1,228 +1,263 @@
-/**
- * Notification server. Launch with:
- *
- *   sudo node aphlict_server.js --user=aphlict
- *
- * You can also specify `port`, `admin`, `host` and `log`.
- */
+var JX = require('./lib/javelin').JX;
+var http = require('http');
+var https = require('https');
+var util = require('util');
+var fs = require('fs');
 
-var config = parse_command_line_arguments(process.argv);
+JX.require('lib/AphlictListenerList', __dirname);
+JX.require('lib/AphlictLog', __dirname);
 
 function parse_command_line_arguments(argv) {
   var config = {
-    port : 22280,
-    admin : 22281,
-    host : '127.0.0.1',
-    user : null,
-    log: '/var/log/aphlict.log'
+    'client-port': 22280,
+    'admin-port': 22281,
+    'client-host': '0.0.0.0',
+    'admin-host': '127.0.0.1',
+    log: '/var/log/aphlict.log',
+    'ssl-key': null,
+    'ssl-cert': null,
+    test: false
   };
 
   for (var ii = 2; ii < argv.length; ii++) {
     var arg = argv[ii];
     var matches = arg.match(/^--([^=]+)=(.*)$/);
     if (!matches) {
-      throw new Error("Unknown argument '"+arg+"'!");
+      throw new Error("Unknown argument '" + arg + "'!");
     }
     if (!(matches[1] in config)) {
-      throw new Error("Unknown argument '"+matches[1]+"'!");
+      throw new Error("Unknown argument '" + matches[1] + "'!");
     }
     config[matches[1]] = matches[2];
   }
 
-  config.port = parseInt(config.port, 10);
-  config.admin = parseInt(config.admin, 10);
+  config['client-port'] = parseInt(config['client-port'], 10);
+  config['admin-port'] = parseInt(config['admin-port'], 10);
 
   return config;
 }
 
-if (process.getuid() !== 0) {
-  console.log(
-    "ERROR: "+
-    "This server must be run as root because it needs to bind to privileged "+
-    "port 843 to start a Flash policy server. It will downgrade to run as a "+
-    "less-privileged user after binding if you pass a user in the command "+
-    "line arguments with '--user=alincoln'.");
-  process.exit(1);
-}
+var debug = new JX.AphlictLog()
+  .addConsole(console);
 
-var net = require('net');
-var http  = require('http');
-var url = require('url');
-var querystring = require('querystring');
-var fs = require('fs');
+var config = parse_command_line_arguments(process.argv);
 
-// set up log file
-var logfile = fs.createWriteStream(
-  config.log,
-  {
-    flags: 'a',
-    encoding: null,
-    mode: 0666
-  });
+process.on('uncaughtException', function(err) {
+  var context = null;
+  if ((err.code == 'EACCES') &&
+      (err.path == config.log)) {
+    context = util.format(
+      'Unable to open logfile ("%s"). Check that permissions are set ' +
+      'correctly.',
+      err.path);
+  }
 
-function log(str) {
-  console.log(str);
-  logfile.write(str + '\n');
-}
+  var message = [
+    '\n<<< UNCAUGHT EXCEPTION! >>>',
+  ];
+  if (context) {
+    message.push(context);
+  }
+  message.push(err.stack);
 
-process.on('uncaughtException', function (err) {
-  log("\n<<< UNCAUGHT EXCEPTION! >>>\n\n" + err);
+  debug.log(message.join('\n\n'));
+
   process.exit(1);
 });
 
-log('----- ' + (new Date()).toLocaleString() + ' -----\n');
-
-function getFlashPolicy() {
-  return [
-    '<?xml version="1.0"?>',
-    '<!DOCTYPE cross-domain-policy SYSTEM ' +
-      '"http://www.macromedia.com/xml/dtds/cross-domain-policy.dtd">',
-    '<cross-domain-policy>',
-    '<allow-access-from domain="*" to-ports="'+config.port+'"/>',
-    '</cross-domain-policy>'
-  ].join('\n');
+var WebSocket;
+try {
+  WebSocket = require('ws');
+} catch (ex) {
+  throw new Error(
+    'You need to install the Node.js "ws" module for websocket support. ' +
+    'See "Notifications User Guide: Setup and Configuration" in the ' +
+    'documentation for instructions. ' + ex.toString());
 }
 
-net.createServer(function(socket) {
-  socket.write(getFlashPolicy() + '\0');
-  socket.end();
+var ssl_config = {
+  enabled: (config['ssl-key'] || config['ssl-cert'])
+};
 
-  log('[' + socket.remoteAddress + '] Sent Flash Policy');
-
-  socket.on('error', function (e) {
-    log('Error in policy server: ' + e);
-  });
-}).listen(843);
-
-
-function write_json(socket, data) {
-  var serial = JSON.stringify(data);
-  var length = Buffer.byteLength(serial, 'utf8');
-  length = length.toString();
-  while (length.length < 8) {
-    length = '0' + length;
-  }
-  socket.write(length + serial);
+// Load the SSL certificates (if any were provided) now, so that runs with
+// `--test` will see any errors.
+if (ssl_config.enabled) {
+  ssl_config.key = fs.readFileSync(config['ssl-key']);
+  ssl_config.cert = fs.readFileSync(config['ssl-cert']);
 }
 
-
-var clients = {};
-var current_connections = 0;
-// According to the internet up to 2^53 can
-// be stored in javascript, this is less than that
-var MAX_ID = 9007199254740991;//2^53 -1
-
-// If we get one connections per millisecond this will
-// be fine as long as someone doesn't maintain a
-// connection for longer than 6854793 years.  If
-// you want to write something pretty be my guest
-
-function generate_id() {
-  if (typeof generate_id.current_id == 'undefined' ||
-      generate_id.current_id > MAX_ID) {
-    generate_id.current_id = 0;
-  }
-  return generate_id.current_id++;
+// Add the logfile so we'll fail if we can't write to it.
+if (config.log) {
+  debug.addLogfile(config.log);
 }
 
-var send_server = net.createServer(function(socket) {
-  var client_id = generate_id();
-  var client_name = '[' + socket.remoteAddress + '] [#' + client_id + '] ';
+// If we're just doing a configuration test, exit here before starting any
+// servers.
+if (config.test) {
+  debug.log('Configuration test OK.');
+  process.exit(0);
+}
 
-  clients[client_id] = socket;
-  current_connections++;
-  log(client_name + 'connected\t\t(' +
-    current_connections + ' current connections)');
-
-  socket.on('close', function() {
-    delete clients[client_id];
-    current_connections--;
-    log(client_name + 'closed\t\t(' +
-      current_connections + ' current connections)');
-  });
-
-  socket.on('timeout', function() {
-    log(client_name + 'timed out!');
-  });
-
-  socket.on('end', function() {
-    log(client_name + 'ended the connection');
-    // node automatically closes half-open connections
-  });
-
-  socket.on('error', function (e) {
-    log(client_name + 'Uncaught error in send server: ' + e);
-  });
-}).listen(config.port);
-
-
+var start_time = new Date().getTime();
 var messages_out = 0;
 var messages_in = 0;
-var start_time = new Date().getTime();
 
-var receive_server = http.createServer(function(request, response) {
-  response.writeHead(200, {'Content-Type' : 'text/plain'});
+var clients = new JX.AphlictListenerList();
 
-  // Publishing a notification.
-  if (request.method == 'POST') {
-    var body = '';
+function https_discard_handler(req, res) {
+  res.writeHead(501);
+  res.end('HTTP/501 Use Websockets\n');
+}
 
-    request.on('data', function (data) {
-      body += data;
-    });
+var ws;
+if (ssl_config.enabled) {
+  var https_server = https.createServer({
+    key: ssl_config.key,
+    cert: ssl_config.cert
+  }, https_discard_handler).listen(
+    config['client-port'],
+    config['client-host']);
 
-    request.on('end', function () {
-      ++messages_in;
+  ws = new WebSocket.Server({server: https_server});
+} else {
+  ws = new WebSocket.Server({
+    port: config['client-port'],
+    host: config['client-host'],
+  });
+}
 
-      var data = querystring.parse(body);
-      log('notification: ' + JSON.stringify(data));
-      broadcast(data);
-      response.end();
-    });
-  } else if (request.url == '/status/') {
-    request.on('data', function(data) {
-      // We just ignore the request data, but newer versions of Node don't
-      // get to 'end' if we don't process the data. See T2953.
-    });
+ws.on('connection', function(ws) {
+  var listener = clients.addListener(ws);
 
-    request.on('end', function() {
-      var status = {
-        'uptime': (new Date().getTime() - start_time),
-        'clients.active': current_connections,
-        'clients.total': generate_id.current_id || 0,
-        'messages.in': messages_in,
-        'messages.out': messages_out,
-        'log': config.log
-      };
-
-      response.write(JSON.stringify(status));
-      response.end();
-    });
-  } else {
-    response.statusCode = 400;
-    response.write('400 Bad Request');
-    response.end();
+  function log() {
+    debug.log(
+      util.format('<%s>', listener.getDescription()) +
+      ' ' +
+      util.format.apply(null, arguments));
   }
 
-}).listen(config.admin, config.host);
+  log('Connected from %s.', ws._socket.remoteAddress);
 
-function broadcast(data) {
-  for (var client_id in clients) {
+  ws.on('message', function(data) {
+    log('Received message: %s', data);
+
+    var message;
     try {
-      write_json(clients[client_id], data);
+      message = JSON.parse(data);
+    } catch (err) {
+      log('Message is invalid: %s', err.message);
+      return;
+    }
+
+    switch (message.command) {
+      case 'subscribe':
+        log(
+          'Subscribed to: %s',
+          JSON.stringify(message.data));
+        listener.subscribe(message.data);
+        break;
+
+      case 'unsubscribe':
+        log(
+          'Unsubscribed from: %s',
+          JSON.stringify(message.data));
+        listener.unsubscribe(message.data);
+        break;
+
+      default:
+        log('Unrecognized command "%s".', message.command || '<undefined>');
+    }
+  });
+
+  ws.on('close', function() {
+    clients.removeListener(listener);
+    log('Disconnected.');
+  });
+
+  ws.on('error', function(err) {
+    log('Error: %s', err.message);
+  });
+});
+
+function transmit(msg) {
+  var listeners = clients.getListeners().filter(function(client) {
+    return client.isSubscribedToAny(msg.subscribers);
+  });
+
+  for (var i = 0; i < listeners.length; i++) {
+    var listener = listeners[i];
+
+    try {
+      listener.writeMessage(msg);
+
       ++messages_out;
-      log('wrote to client ' + client_id);
+      debug.log('<%s> Wrote Message', listener.getDescription());
     } catch (error) {
-      delete clients[client_id];
-      current_connections--;
-      log('ERROR: could not write to client ' + client_id);
+      clients.removeListener(listener);
+      debug.log('<%s> Write Error: %s', listener.getDescription(), error);
     }
   }
 }
 
-// If we're configured to drop permissions, get rid of them now that we've
-// bound to the ports we need and opened logfiles.
-if (config.user) {
-  process.setuid(config.user);
-}
+http.createServer(function(request, response) {
+  // Publishing a notification.
+  if (request.url == '/') {
+    if (request.method == 'POST') {
+      var body = '';
 
+      request.on('data', function(data) {
+        body += data;
+      });
+
+      request.on('end', function() {
+        try {
+          var msg = JSON.parse(body);
+
+          debug.log('Received notification: ' + JSON.stringify(msg));
+          ++messages_in;
+
+          try {
+            transmit(msg);
+            response.writeHead(200, {'Content-Type': 'text/plain'});
+          } catch (err) {
+            debug.log(
+              '<%s> Internal Server Error! %s',
+              request.socket.remoteAddress,
+              err);
+            response.writeHead(500, 'Internal Server Error');
+          }
+        } catch (err) {
+          debug.log(
+            '<%s> Bad Request! %s',
+            request.socket.remoteAddress,
+            err);
+          response.writeHead(400, 'Bad Request');
+        } finally {
+          response.end();
+        }
+      });
+    } else {
+      response.writeHead(405, 'Method Not Allowed');
+      response.end();
+    }
+  } else if (request.url == '/status/') {
+    var status = {
+      'uptime': (new Date().getTime() - start_time),
+      'clients.active': clients.getActiveListenerCount(),
+      'clients.total': clients.getTotalListenerCount(),
+      'messages.in': messages_in,
+      'messages.out': messages_out,
+      'log': config.log,
+      'version': 6
+    };
+
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.write(JSON.stringify(status));
+    response.end();
+  } else {
+    response.writeHead(404, 'Not Found');
+    response.end();
+  }
+}).listen(config['admin-port'], config['admin-host']);
+
+debug.log('Started Server (PID %d)', process.pid);

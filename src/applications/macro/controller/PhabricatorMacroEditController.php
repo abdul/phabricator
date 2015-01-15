@@ -1,7 +1,6 @@
 <?php
 
-final class PhabricatorMacroEditController
-  extends PhabricatorMacroController {
+final class PhabricatorMacroEditController extends PhabricatorMacroController {
 
   private $id;
 
@@ -10,6 +9,8 @@ final class PhabricatorMacroEditController
   }
 
   public function processRequest() {
+    $this->requireApplicationCapability(
+      PhabricatorMacroManageCapability::CAPABILITY);
 
     $request = $this->getRequest();
     $user = $request->getUser();
@@ -17,12 +18,8 @@ final class PhabricatorMacroEditController
     if ($this->id) {
       $macro = id(new PhabricatorMacroQuery())
         ->setViewer($user)
-        ->requireCapabilities(
-          array(
-            PhabricatorPolicyCapability::CAN_VIEW,
-            PhabricatorPolicyCapability::CAN_EDIT,
-          ))
         ->withIDs(array($this->id))
+        ->needFiles(true)
         ->executeOne();
       if (!$macro) {
         return new Aphront404Response();
@@ -50,7 +47,7 @@ final class PhabricatorMacroEditController
         if (!strlen($macro->getName())) {
           $errors[] = pht('Macro name is required.');
           $e_name = pht('Required');
-        } else if (!preg_match('/^[a-z0-9:_-]{3,}$/', $macro->getName())) {
+        } else if (!preg_match('/^[a-z0-9:_-]{3,}\z/', $macro->getName())) {
           $errors[] = pht(
             'Macro must be at least three characters long and contain only '.
             'lowercase letters, digits, hyphens, colons and underscores.');
@@ -68,6 +65,7 @@ final class PhabricatorMacroEditController
             'name' => $request->getStr('name'),
             'authorPHID' => $user->getPHID(),
             'isExplicitUpload' => true,
+            'canCDN' => true,
           ));
       } else if ($request->getStr('url')) {
         try {
@@ -77,14 +75,16 @@ final class PhabricatorMacroEditController
               'name' => $request->getStr('name'),
               'authorPHID' => $user->getPHID(),
               'isExplicitUpload' => true,
+              'canCDN' => true,
             ));
         } catch (Exception $ex) {
           $errors[] = pht('Could not fetch URL: %s', $ex->getMessage());
         }
       } else if ($request->getStr('phid')) {
-        $file = id(new PhabricatorFile())->loadOneWhere(
-          'phid = %s',
-          $request->getStr('phid'));
+        $file = id(new PhabricatorFileQuery())
+          ->setViewer($user)
+          ->withPHIDs(array($request->getStr('phid')))
+          ->executeOne();
       }
 
       if ($file) {
@@ -128,20 +128,12 @@ final class PhabricatorMacroEditController
 
           $view_uri = $this->getApplicationURI('/view/'.$original->getID().'/');
           return id(new AphrontRedirectResponse())->setURI($view_uri);
-        } catch (AphrontQueryDuplicateKeyException $ex) {
+        } catch (AphrontDuplicateKeyQueryException $ex) {
           throw $ex;
           $errors[] = pht('Macro name is not unique!');
           $e_name = pht('Duplicate');
         }
       }
-    }
-
-    if ($errors) {
-      $error_view = new AphrontErrorView();
-      $error_view->setTitle(pht('Form Errors'));
-      $error_view->setErrors($errors);
-    } else {
-      $error_view = null;
     }
 
     $current_file = null;
@@ -220,19 +212,13 @@ final class PhabricatorMacroEditController
       $title = pht('Edit Image Macro');
       $crumb = pht('Edit Macro');
 
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setHref($view_uri)
-          ->setName(pht('Macro "%s"', $macro->getName())));
+      $crumbs->addTextCrumb(pht('Macro "%s"', $macro->getName()), $view_uri);
     } else {
       $title = pht('Create Image Macro');
       $crumb = pht('Create Macro');
     }
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setHref($request->getRequestURI())
-        ->setName($crumb));
+    $crumbs->addTextCrumb($crumb, $request->getRequestURI());
 
     $upload = null;
     if ($macro->getID()) {
@@ -257,14 +243,14 @@ final class PhabricatorMacroEditController
           id(new AphrontFormSubmitControl())
             ->setValue(pht('Upload File')));
 
-      $upload = id(new PHUIFormBoxView())
-      ->setHeaderText(pht('Upload New File'))
-      ->setForm($upload_form);
+      $upload = id(new PHUIObjectBoxView())
+        ->setHeaderText(pht('Upload New File'))
+        ->setForm($upload_form);
     }
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($title)
-      ->setFormError($error_view)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     return $this->buildApplicationPage(
@@ -275,7 +261,7 @@ final class PhabricatorMacroEditController
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
+
 }

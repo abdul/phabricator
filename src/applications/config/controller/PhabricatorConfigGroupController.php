@@ -20,32 +20,24 @@ final class PhabricatorConfigGroupController
     }
 
     $title = pht('%s Configuration', $options->getName());
-
-    $header = id(new PhabricatorHeaderView())
-      ->setHeader($title);
-
     $list = $this->buildOptionList($options->getOptions());
+
+    $box = id(new PHUIObjectBoxView())
+      ->setHeaderText($title)
+      ->appendChild($list);
 
     $crumbs = $this
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht('Config'))
-          ->setHref($this->getApplicationURI()))
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName($options->getName())
-          ->setHref($this->getApplicationURI()));
+      ->addTextCrumb(pht('Config'), $this->getApplicationURI())
+      ->addTextCrumb($options->getName(), $this->getApplicationURI());
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $header,
-        $list,
+        $box,
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

@@ -7,11 +7,43 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
   private $serverTime;
   private $localTime;
 
-  public function getConfiguration() {
-    return array(
+  protected function getConfiguration() {
+    $parent = parent::getConfiguration();
+
+    $config = array(
       self::CONFIG_IDS => self::IDS_COUNTER,
       self::CONFIG_TIMESTAMPS => false,
-    ) + parent::getConfiguration();
+      self::CONFIG_KEY_SCHEMA => array(
+        'dataID' => array(
+          'columns' => array('dataID'),
+          'unique' => true,
+        ),
+        'taskClass' => array(
+          'columns' => array('taskClass'),
+        ),
+        'leaseExpires' => array(
+          'columns' => array('leaseExpires'),
+        ),
+        'leaseOwner' => array(
+          'columns' => array('leaseOwner(16)'),
+        ),
+        'key_failuretime' => array(
+          'columns' => array('failureTime'),
+        ),
+        'leaseOwner_2' => array(
+          'columns' => array('leaseOwner', 'priority', 'id'),
+        ),
+      ) + $parent[self::CONFIG_KEY_SCHEMA],
+    );
+
+    $config[self::CONFIG_COLUMN_SCHEMA] = array(
+      // T6203/NULLABILITY
+      // This isn't nullable in the archive table, so at a minimum these
+      // should be the same.
+      'dataID' => 'uint32?',
+    ) + $parent[self::CONFIG_COLUMN_SCHEMA];
+
+    return $config + $parent;
   }
 
   public function setServerTime($server_time) {
@@ -67,8 +99,8 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
 
   public function delete() {
     throw new Exception(
-      "Active tasks can not be deleted directly. ".
-      "Use archiveTask() to move tasks to the archive.");
+      'Active tasks can not be deleted directly. '.
+      'Use archiveTask() to move tasks to the archive.');
   }
 
   public function archiveTask($result, $duration) {
@@ -86,6 +118,8 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
       ->setLeaseExpires($this->getLeaseExpires())
       ->setFailureCount($this->getFailureCount())
       ->setDataID($this->getDataID())
+      ->setPriority($this->getPriority())
+      ->setObjectPHID($this->getObjectPHID())
       ->setResult($result)
       ->setDuration($duration);
 
@@ -100,6 +134,7 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
     // to release the lease otherwise.
     $this->checkLease();
 
+    $did_succeed = false;
     try {
       $worker = $this->getWorkerInstance();
 
@@ -126,11 +161,22 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
       $result = $this->archiveTask(
         PhabricatorWorkerArchiveTask::RESULT_SUCCESS,
         $duration);
+      $did_succeed = true;
     } catch (PhabricatorWorkerPermanentFailureException $ex) {
       $result = $this->archiveTask(
         PhabricatorWorkerArchiveTask::RESULT_FAILURE,
         0);
       $result->setExecutionException($ex);
+    } catch (PhabricatorWorkerYieldException $ex) {
+      $this->setExecutionException($ex);
+
+      $retry = $ex->getDuration();
+      $retry = max($retry, 5);
+
+      // NOTE: As a side effect, this saves the object.
+      $this->setLeaseDuration($retry);
+
+      $result = $this;
     } catch (Exception $ex) {
       $this->setExecutionException($ex);
       $this->setFailureCount($this->getFailureCount() + 1);
@@ -139,7 +185,7 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
       $retry = $worker->getWaitBeforeRetry($this);
       $retry = coalesce(
         $retry,
-        PhabricatorWorkerLeaseQuery::DEFAULT_LEASE_DURATION);
+        PhabricatorWorkerLeaseQuery::getDefaultWaitBeforeRetry());
 
       // NOTE: As a side effect, this saves the object.
       $this->setLeaseDuration($retry);
@@ -147,8 +193,21 @@ final class PhabricatorWorkerActiveTask extends PhabricatorWorkerTask {
       $result = $this;
     }
 
+    // NOTE: If this throws, we don't want it to cause the task to fail again,
+    // so execute it out here and just let the exception escape.
+    if ($did_succeed) {
+      foreach ($worker->getQueuedTasks() as $task) {
+        list($class, $data) = $task;
+        PhabricatorWorker::scheduleTask(
+          $class,
+          $data,
+          array(
+            'priority' => $this->getPriority(),
+          ));
+      }
+    }
+
     return $result;
   }
-
 
 }

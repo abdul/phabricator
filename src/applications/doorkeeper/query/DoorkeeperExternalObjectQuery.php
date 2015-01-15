@@ -16,7 +16,7 @@ final class DoorkeeperExternalObjectQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new DoorkeeperExternalObject();
     $conn_r = $table->establishConnection('r');
 
@@ -50,6 +50,10 @@ final class DoorkeeperExternalObjectQuery
 
     $where[] = $this->buildPagingClause($conn_r);
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorDoorkeeperApplication';
   }
 
 }

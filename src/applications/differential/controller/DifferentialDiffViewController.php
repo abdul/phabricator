@@ -4,6 +4,10 @@ final class DifferentialDiffViewController extends DifferentialController {
 
   private $id;
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function willProcessRequest(array $data) {
     $this->id = $data['id'];
   }
@@ -20,10 +24,10 @@ final class DifferentialDiffViewController extends DifferentialController {
       return new Aphront404Response();
     }
 
+    $error_view = id(new AphrontErrorView())
+        ->setSeverity(AphrontErrorView::SEVERITY_NOTICE);
     if ($diff->getRevisionID()) {
-      $top_part = id(new AphrontErrorView())
-        ->setSeverity(AphrontErrorView::SEVERITY_NOTICE)
-        ->appendChild(
+      $error_view->appendChild(
           pht(
             'This diff belongs to revision %s.',
             phutil_tag(
@@ -36,8 +40,9 @@ final class DifferentialDiffViewController extends DifferentialController {
       // TODO: implement optgroup support in AphrontFormSelectControl?
       $select = array();
       $select[] = hsprintf('<optgroup label="%s">', pht('Create New Revision'));
-      $select[] = hsprintf(
-        '<option value="">%s</option>',
+      $select[] = phutil_tag(
+        'option',
+        array('value' => ''),
         pht('Create a new Revision...'));
       $select[] = hsprintf('</optgroup>');
 
@@ -57,7 +62,10 @@ final class DifferentialDiffViewController extends DifferentialController {
             array(
               'value' => $revision->getID(),
             ),
-            'D'.$revision->getID().' '.$revision->getTitle());
+            id(new PhutilUTF8StringTruncator())
+            ->setMaximumGlyphs(128)
+            ->truncateString(
+              'D'.$revision->getID().' '.$revision->getTitle()));
         }
         $select[] = hsprintf('</optgroup>');
       }
@@ -72,6 +80,9 @@ final class DifferentialDiffViewController extends DifferentialController {
         ->setAction('/differential/revision/edit/')
         ->addHiddenInput('diffID', $diff->getID())
         ->addHiddenInput('viaDiffView', 1)
+        ->addHiddenInput(
+          id(new DifferentialRepositoryField())->getFieldKey(),
+          $diff->getRepositoryPHID())
         ->appendRemarkupInstructions(
           pht(
             'Review the diff for correctness. When you are satisfied, either '.
@@ -84,7 +95,7 @@ final class DifferentialDiffViewController extends DifferentialController {
           id(new AphrontFormSubmitControl())
           ->setValue(pht('Continue')));
 
-      $top_part = $form;
+        $error_view->appendChild($form);
     }
 
     $props = id(new DifferentialDiffProperty())->loadAllWhere(
@@ -92,35 +103,10 @@ final class DifferentialDiffViewController extends DifferentialController {
       $diff->getID());
     $props = mpull($props, 'getData', 'getName');
 
-    $aux_fields = DifferentialFieldSelector::newSelector()
-      ->getFieldSpecifications();
-    foreach ($aux_fields as $key => $aux_field) {
-      if (!$aux_field->shouldAppearOnDiffView()) {
-        unset($aux_fields[$key]);
-      } else {
-        $aux_field->setUser($this->getRequest()->getUser());
-      }
-    }
-
-    $dict = array();
-    foreach ($aux_fields as $key => $aux_field) {
-      $aux_field->setDiff($diff);
-      $aux_field->setManualDiff($diff);
-      $aux_field->setDiffProperties($props);
-      $value = $aux_field->renderValueForDiffView();
-      if (strlen($value)) {
-        $label = rtrim($aux_field->renderLabelForDiffView(), ':');
-        $dict[$label] = $value;
-      }
-    }
-
-    $property_head = id(new PhabricatorHeaderView())
+    $property_head = id(new PHUIHeaderView())
       ->setHeader(pht('Properties'));
 
-    $property_view = new PhabricatorPropertyListView();
-    foreach ($dict as $key => $value) {
-      $property_view->addProperty($key, $value);
-    }
+    $property_view = new PHUIPropertyListView();
 
     $changesets = $diff->loadChangesets();
     $changesets = msort($changesets, 'getSortKey');
@@ -145,16 +131,17 @@ final class DifferentialDiffViewController extends DifferentialController {
       ->setUser($request->getUser());
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Diff %d', $diff->getID())));
+    $crumbs->addTextCrumb(pht('Diff %d', $diff->getID()));
+
+    $prop_box = id(new PHUIObjectBoxView())
+      ->setHeader($property_head)
+      ->addPropertyList($property_view)
+      ->setErrorView($error_view);
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $top_part,
-        $property_head,
-        $property_view,
+        $prop_box,
         $table_of_contents,
         $details,
       ),

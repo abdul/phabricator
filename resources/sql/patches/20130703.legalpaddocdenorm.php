@@ -1,6 +1,6 @@
 <?php
 
-echo "Populating Legalpad Documents with ",
+echo 'Populating Legalpad Documents with ',
  "titles, recentContributorPHIDs, and contributorCounts...\n";
 $table = new LegalpadDocument();
 $table->openTransaction();
@@ -24,7 +24,7 @@ foreach (new LiskMigrationIterator($table) as $document) {
   if (!$document->getContributorCount() ||
       !$document->getRecentContributorPHIDs()) {
     $updated = true;
-    $type = PhabricatorEdgeConfig::TYPE_OBJECT_HAS_CONTRIBUTOR;
+    $type = PhabricatorObjectHasContributorEdgeType::EDGECONST;
     $contributors = PhabricatorEdgeQuery::loadDestinationPHIDs(
       $document->getPHID(),
       $type);

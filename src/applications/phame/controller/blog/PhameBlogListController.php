@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhameBlogListController extends PhameController {
 
   private $filter;
@@ -48,10 +45,7 @@ final class PhameBlogListController extends PhameController {
     $blog_list->setPager($pager);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title)
-        ->setHref($this->getApplicationURI()));
+    $crumbs->addTextCrumb($title, $this->getApplicationURI());
 
     $nav->appendChild(
       array(
@@ -63,7 +57,6 @@ final class PhameBlogListController extends PhameController {
       $nav,
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

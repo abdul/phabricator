@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group slowvote
- */
 final class PhabricatorSlowvoteEditController
   extends PhabricatorSlowvoteController {
 
@@ -32,10 +29,17 @@ final class PhabricatorSlowvoteEditController
       }
       $is_new = false;
     } else {
-      $poll = id(new PhabricatorSlowvotePoll())
-        ->setAuthorPHID($user->getPHID())
-        ->setViewPolicy(PhabricatorPolicies::POLICY_USER);
+      $poll = PhabricatorSlowvotePoll::initializeNewPoll($user);
       $is_new = true;
+    }
+
+    if ($is_new) {
+      $v_projects = array();
+    } else {
+      $v_projects = PhabricatorEdgeQuery::loadDestinationPHIDs(
+        $poll->getPHID(),
+        PhabricatorProjectObjectHasProjectEdgeType::EDGECONST);
+      $v_projects = array_reverse($v_projects);
     }
 
     $e_question = true;
@@ -53,6 +57,8 @@ final class PhabricatorSlowvoteEditController
       $v_description = $request->getStr('description');
       $v_responses = (int)$request->getInt('responses');
       $v_shuffle = (int)$request->getBool('shuffle');
+      $v_view_policy = $request->getStr('viewPolicy');
+      $v_projects = $request->getArr('projects');
 
       if ($is_new) {
         $poll->setMethod($request->getInt('method'));
@@ -94,7 +100,17 @@ final class PhabricatorSlowvoteEditController
         ->setTransactionType(PhabricatorSlowvoteTransaction::TYPE_SHUFFLE)
         ->setNewValue($v_shuffle);
 
+      $xactions[] = id(clone $template)
+        ->setTransactionType(PhabricatorTransactions::TYPE_VIEW_POLICY)
+        ->setNewValue($v_view_policy);
+
       if (empty($errors)) {
+        $proj_edge_type = PhabricatorProjectObjectHasProjectEdgeType::EDGECONST;
+        $xactions[] = id(new PhabricatorSlowvoteTransaction())
+          ->setTransactionType(PhabricatorTransactions::TYPE_EDGE)
+          ->setMetadataValue('edge:type', $proj_edge_type)
+          ->setNewValue(array('=' => array_fuse($v_projects)));
+
         $editor = id(new PhabricatorSlowvoteEditor())
           ->setActor($user)
           ->setContinueOnNoEffect(true)
@@ -115,14 +131,9 @@ final class PhabricatorSlowvoteEditController
 
         return id(new AphrontRedirectResponse())
           ->setURI('/V'.$poll->getID());
+      } else {
+        $poll->setViewPolicy($v_view_policy);
       }
-    }
-
-    $error_view = null;
-    if ($errors) {
-      $error_view = new AphrontErrorView();
-      $error_view->setTitle(pht('Form Errors'));
-      $error_view->setErrors($errors);
     }
 
     $instructions =
@@ -133,6 +144,12 @@ final class PhabricatorSlowvoteEditController
         ),
         pht('Resolve issues and build consensus through '.
           'protracted deliberation.'));
+
+    if ($v_projects) {
+      $project_handles = $this->loadViewerHandles($v_projects);
+    } else {
+      $project_handles = array();
+    }
 
     $form = id(new AphrontFormView())
       ->setUser($user)
@@ -146,15 +163,22 @@ final class PhabricatorSlowvoteEditController
           ->setError($e_question))
       ->appendChild(
         id(new PhabricatorRemarkupControl())
+          ->setUser($user)
           ->setLabel(pht('Description'))
           ->setName('description')
-          ->setValue($v_description));
+          ->setValue($v_description))
+      ->appendChild(
+        id(new AphrontFormTokenizerControl())
+          ->setLabel(pht('Projects'))
+          ->setName('projects')
+          ->setValue($project_handles)
+          ->setDatasource(new PhabricatorProjectDatasource()));
 
     if ($is_new) {
       for ($ii = 0; $ii < 10; $ii++) {
         $n = ($ii + 1);
         $response = id(new AphrontFormTextControl())
-          ->setLabel(pht("Response %d", $n))
+          ->setLabel(pht('Response %d', $n))
           ->setName('response[]')
           ->setValue(idx($responses, $ii, ''));
 
@@ -206,6 +230,11 @@ final class PhabricatorSlowvoteEditController
       $cancel_uri = '/V'.$poll->getID();
     }
 
+    $policies = id(new PhabricatorPolicyQuery())
+      ->setViewer($user)
+      ->setObject($poll)
+      ->execute();
+
     $form
       ->appendChild(
         id(new AphrontFormSelectControl())
@@ -222,18 +251,23 @@ final class PhabricatorSlowvoteEditController
             pht('Show choices in random order.'),
             $v_shuffle))
       ->appendChild(
+        id(new AphrontFormPolicyControl())
+          ->setUser($user)
+          ->setName('viewPolicy')
+          ->setPolicyObject($poll)
+          ->setPolicies($policies)
+          ->setCapability(PhabricatorPolicyCapability::CAN_VIEW))
+      ->appendChild(
         id(new AphrontFormSubmitControl())
           ->setValue($button)
           ->addCancelButton($cancel_uri));
 
     $crumbs = $this->buildApplicationCrumbs($this->buildSideNavView());
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title));
+    $crumbs->addTextCrumb($title);
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($title)
-      ->setFormError($error_view)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     return $this->buildApplicationPage(
@@ -243,7 +277,6 @@ final class PhabricatorSlowvoteEditController
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

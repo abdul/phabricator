@@ -3,6 +3,14 @@
 final class DifferentialRevisionSearchEngine
   extends PhabricatorApplicationSearchEngine {
 
+  public function getResultTypeDescription() {
+    return pht('Differential Revisions');
+  }
+
+  protected function getApplicationClassName() {
+    return 'PhabricatorDifferentialApplication';
+  }
+
   public function getPageSize(PhabricatorSavedQuery $saved) {
     if ($saved->getQueryKey() == 'active') {
       return 0xFFFF;
@@ -23,11 +31,20 @@ final class DifferentialRevisionSearchEngine
 
     $saved->setParameter(
       'reviewerPHIDs',
-      $this->readUsersFromRequest($request, 'reviewers'));
+      $this->readUsersFromRequest(
+        $request,
+        'reviewers',
+        array(
+          PhabricatorProjectProjectPHIDType::TYPECONST,
+        )));
 
     $saved->setParameter(
       'subscriberPHIDs',
       $this->readUsersFromRequest($request, 'subscribers'));
+
+    $saved->setParameter(
+      'repositoryPHIDs',
+      $request->getArr('repositories'));
 
     $saved->setParameter(
       'draft',
@@ -46,6 +63,8 @@ final class DifferentialRevisionSearchEngine
 
   public function buildQueryFromSavedQuery(PhabricatorSavedQuery $saved) {
     $query = id(new DifferentialRevisionQuery())
+      ->needFlags(true)
+      ->needDrafts(true)
       ->needRelationships(true);
 
     $responsible_phids = $saved->getParameter('responsiblePHIDs', array());
@@ -66,6 +85,11 @@ final class DifferentialRevisionSearchEngine
     $subscriber_phids = $saved->getParameter('subscriberPHIDs', array());
     if ($subscriber_phids) {
       $query->withCCs($subscriber_phids);
+    }
+
+    $repository_phids = $saved->getParameter('repositoryPHIDs', array());
+    if ($repository_phids) {
+      $query->withRepositoryPHIDs($repository_phids);
     }
 
     $draft = $saved->getParameter('draft', false);
@@ -97,6 +121,7 @@ final class DifferentialRevisionSearchEngine
     $author_phids = $saved->getParameter('authorPHIDs', array());
     $reviewer_phids = $saved->getParameter('reviewerPHIDs', array());
     $subscriber_phids = $saved->getParameter('subscriberPHIDs', array());
+    $repository_phids = $saved->getParameter('repositoryPHIDs', array());
     $only_draft = $saved->getParameter('draft', false);
 
     $all_phids = array_mergev(
@@ -105,6 +130,7 @@ final class DifferentialRevisionSearchEngine
         $author_phids,
         $reviewer_phids,
         $subscriber_phids,
+        $repository_phids,
       ));
 
     $handles = id(new PhabricatorHandleQuery())
@@ -112,33 +138,37 @@ final class DifferentialRevisionSearchEngine
       ->withPHIDs($all_phids)
       ->execute();
 
-    $tokens = mpull($handles, 'getFullName', 'getPHID');
-
     $form
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setLabel(pht('Responsible Users'))
           ->setName('responsibles')
-          ->setDatasource('/typeahead/common/accounts/')
-          ->setValue(array_select_keys($tokens, $responsible_phids)))
+          ->setDatasource(new PhabricatorPeopleDatasource())
+          ->setValue(array_select_keys($handles, $responsible_phids)))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setLabel(pht('Authors'))
           ->setName('authors')
-          ->setDatasource('/typeahead/common/accounts/')
-          ->setValue(array_select_keys($tokens, $author_phids)))
+          ->setDatasource(new PhabricatorPeopleDatasource())
+          ->setValue(array_select_keys($handles, $author_phids)))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setLabel(pht('Reviewers'))
           ->setName('reviewers')
-          ->setDatasource('/typeahead/common/accounts/')
-          ->setValue(array_select_keys($tokens, $reviewer_phids)))
+          ->setDatasource(new PhabricatorProjectOrUserDatasource())
+          ->setValue(array_select_keys($handles, $reviewer_phids)))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
           ->setLabel(pht('Subscribers'))
           ->setName('subscribers')
-          ->setDatasource('/typeahead/common/allmailable/')
-          ->setValue(array_select_keys($tokens, $subscriber_phids)))
+          ->setDatasource(new PhabricatorMetaMTAMailableDatasource())
+          ->setValue(array_select_keys($handles, $subscriber_phids)))
+      ->appendChild(
+        id(new AphrontFormTokenizerControl())
+          ->setLabel(pht('Repositories'))
+          ->setName('repositories')
+          ->setDatasource(new DiffusionRepositoryDatasource())
+          ->setValue(array_select_keys($handles, $repository_phids)))
       ->appendChild(
         id(new AphrontFormSelectControl())
           ->setLabel(pht('Status'))
@@ -164,14 +194,13 @@ final class DifferentialRevisionSearchEngine
           ->setName('order')
           ->setOptions($this->getOrderOptions())
           ->setValue($saved->getParameter('order')));
-
   }
 
   protected function getURI($path) {
     return '/differential/'.$path;
   }
 
-  public function getBuiltinQueryNames() {
+  protected function getBuiltinQueryNames() {
     $names = array();
 
     if ($this->requireViewer()->isLoggedIn()) {
@@ -207,10 +236,13 @@ final class DifferentialRevisionSearchEngine
 
   private function getStatusOptions() {
     return array(
-      DifferentialRevisionQuery::STATUS_ANY       => pht('All'),
-      DifferentialRevisionQuery::STATUS_OPEN      => pht('Open'),
-      DifferentialRevisionQuery::STATUS_CLOSED    => pht('Closed'),
-      DifferentialRevisionQuery::STATUS_ABANDONED => pht('Abandoned'),
+      DifferentialRevisionQuery::STATUS_ANY            => pht('All'),
+      DifferentialRevisionQuery::STATUS_OPEN           => pht('Open'),
+      DifferentialRevisionQuery::STATUS_ACCEPTED       => pht('Accepted'),
+      DifferentialRevisionQuery::STATUS_NEEDS_REVIEW   => pht('Needs Review'),
+      DifferentialRevisionQuery::STATUS_NEEDS_REVISION => pht('Needs Revision'),
+      DifferentialRevisionQuery::STATUS_CLOSED         => pht('Closed'),
+      DifferentialRevisionQuery::STATUS_ABANDONED      => pht('Abandoned'),
     );
   }
 
@@ -219,6 +251,74 @@ final class DifferentialRevisionSearchEngine
       DifferentialRevisionQuery::ORDER_CREATED    => pht('Created'),
       DifferentialRevisionQuery::ORDER_MODIFIED   => pht('Updated'),
     );
+  }
+
+  protected function renderResultList(
+    array $revisions,
+    PhabricatorSavedQuery $query,
+    array $handles) {
+    assert_instances_of($revisions, 'DifferentialRevision');
+
+    $viewer = $this->requireViewer();
+    $template = id(new DifferentialRevisionListView())
+      ->setUser($viewer);
+
+    $views = array();
+    if ($query->getQueryKey() == 'active') {
+        $split = DifferentialRevisionQuery::splitResponsible(
+          $revisions,
+          $query->getParameter('responsiblePHIDs'));
+        list($blocking, $active, $waiting) = $split;
+
+      $views[] = id(clone $template)
+        ->setHeader(pht('Blocking Others'))
+        ->setNoDataString(
+          pht('No revisions are blocked on your action.'))
+        ->setHighlightAge(true)
+        ->setRevisions($blocking)
+        ->setHandles(array());
+
+      $views[] = id(clone $template)
+        ->setHeader(pht('Action Required'))
+        ->setNoDataString(
+          pht('No revisions require your action.'))
+        ->setHighlightAge(true)
+        ->setRevisions($active)
+        ->setHandles(array());
+
+      $views[] = id(clone $template)
+        ->setHeader(pht('Waiting on Others'))
+        ->setNoDataString(
+          pht('You have no revisions waiting on others.'))
+        ->setRevisions($waiting)
+        ->setHandles(array());
+    } else {
+      $views[] = id(clone $template)
+        ->setRevisions($revisions)
+        ->setHandles(array());
+    }
+
+    $phids = array_mergev(mpull($views, 'getRequiredHandlePHIDs'));
+    if ($phids) {
+      $handles = id(new PhabricatorHandleQuery())
+        ->setViewer($viewer)
+        ->withPHIDs($phids)
+        ->execute();
+    } else {
+      $handles = array();
+    }
+
+    foreach ($views as $view) {
+      $view->setHandles($handles);
+    }
+
+    if (count($views) == 1) {
+      // Reduce this to a PHUIObjectItemListView so we can get the free
+      // support from ApplicationSearch.
+      return head($views)->render();
+    } else {
+      return $views;
+    }
   }
 
 }

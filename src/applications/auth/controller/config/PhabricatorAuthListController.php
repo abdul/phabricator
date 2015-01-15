@@ -49,20 +49,24 @@ final class PhabricatorAuthListController
         $item->addAttribute(pht('Allows Registration'));
       }
 
+      $can_manage = $this->hasApplicationCapability(
+        AuthManageProvidersCapability::CAPABILITY);
       if ($config->getIsEnabled()) {
         $item->setBarColor('green');
         $item->addAction(
           id(new PHUIListItemView())
-            ->setIcon('delete')
+            ->setIcon('fa-times')
             ->setHref($disable_uri)
+            ->setDisabled(!$can_manage)
             ->addSigil('workflow'));
       } else {
         $item->setBarColor('grey');
-        $item->addIcon('delete-grey', pht('Disabled'));
+        $item->addIcon('fa-times grey', pht('Disabled'));
         $item->addAction(
           id(new PHUIListItemView())
-            ->setIcon('new')
+            ->setIcon('fa-plus')
             ->setHref($enable_uri)
+            ->setDisabled(!$can_manage)
             ->addSigil('workflow'));
       }
 
@@ -86,18 +90,49 @@ final class PhabricatorAuthListController
           pht('Add Authentication Provider'))));
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Auth Providers')));
+    $crumbs->addTextCrumb(pht('Auth Providers'));
+
+    $config_name = 'auth.email-domains';
+    $config_href = '/config/edit/'.$config_name.'/';
+    $config_link = phutil_tag(
+      'a',
+      array(
+        'href' => $config_href,
+        'target' => '_blank',
+      ),
+      $config_name);
+
+    $warning = new AphrontErrorView();
+
+    $email_domains = PhabricatorEnv::getEnvConfig($config_name);
+    if ($email_domains) {
+      $warning->setSeverity(AphrontErrorView::SEVERITY_NOTICE);
+      $warning->setTitle(pht('Registration is Restricted'));
+      $warning->appendChild(
+        pht(
+          'Only users with a verified email address at one of the %s domains '.
+          'will be able to register a Phabricator account: %s',
+          $config_link,
+          phutil_tag('strong', array(), implode(', ', $email_domains))));
+    } else {
+      $warning->setSeverity(AphrontErrorView::SEVERITY_WARNING);
+      $warning->setTitle(pht('Anyone Can Register an Account'));
+      $warning->appendChild(
+        pht(
+          'Anyone who can browse to this Phabricator install will be able to '.
+          'register an account. To restrict who can register an account, '.
+          'configure %s.',
+          $config_link));
+    }
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
+        $warning,
         $list,
       ),
       array(
         'title' => pht('Authentication Providers'),
-        'device' => true,
       ));
   }
 

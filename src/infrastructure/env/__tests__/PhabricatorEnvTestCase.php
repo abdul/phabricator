@@ -13,6 +13,7 @@ final class PhabricatorEnvTestCase extends PhabricatorTestCase {
       'javascript:lol'        => false,
       ''                      => false,
       null                    => false,
+      '/\\evil.com'           => false,
     );
 
     foreach ($map as $uri => $expect) {
@@ -104,7 +105,7 @@ final class PhabricatorEnvTestCase extends PhabricatorTestCase {
       $caught = $ex;
     }
 
-    $this->assertEqual(true, ($caught instanceof Exception));
+    $this->assertTrue($caught instanceof Exception);
   }
 
   public function testOverrides() {
@@ -139,11 +140,10 @@ final class PhabricatorEnvTestCase extends PhabricatorTestCase {
       $caught = $ex;
     }
 
-    $this->assertEqual(
-      true,
+    $this->assertTrue(
       $caught instanceof Exception,
-      "Destroying a scoped environment which is not on the top of the stack ".
-      "should throw.");
+      'Destroying a scoped environment which is not on the top of the stack '.
+      'should throw.');
 
     if (phutil_is_hiphop_runtime()) {
       $inner->__destruct();
@@ -159,19 +159,19 @@ final class PhabricatorEnvTestCase extends PhabricatorTestCase {
   public function testGetEnvExceptions() {
     $caught = null;
     try {
-      PhabricatorEnv::getEnvConfig("not.a.real.config.option");
+      PhabricatorEnv::getEnvConfig('not.a.real.config.option');
     } catch (Exception $ex) {
       $caught = $ex;
     }
-    $this->assertEqual(true, $caught instanceof Exception);
+    $this->assertTrue($caught instanceof Exception);
 
     $caught = null;
     try {
-      PhabricatorEnv::getEnvConfig("test.value");
+      PhabricatorEnv::getEnvConfig('test.value');
     } catch (Exception $ex) {
       $caught = $ex;
     }
-    $this->assertEqual(false, $caught instanceof Exception);
+    $this->assertFalse($caught instanceof Exception);
   }
 
 }

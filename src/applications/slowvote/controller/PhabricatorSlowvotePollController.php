@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group slowvote
- */
 final class PhabricatorSlowvotePollController
   extends PhabricatorSlowvoteController {
 
@@ -41,42 +38,46 @@ final class PhabricatorSlowvotePollController
           ));
     }
 
-    $header = id(new PhabricatorHeaderView())
-      ->setHeader($poll->getQuestion());
+    $header_icon = $poll->getIsClosed() ? 'fa-ban' : 'fa-circle-o';
+    $header_name = $poll->getIsClosed() ? pht('Closed') : pht('Open');
+    $header_color = $poll->getIsClosed() ? 'dark' : 'bluegrey';
 
-    $xaction_header = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Ongoing Deliberations'));
+    $header = id(new PHUIHeaderView())
+      ->setHeader($poll->getQuestion())
+      ->setUser($user)
+      ->setStatus($header_icon, $header_color, $header_name)
+      ->setPolicyObject($poll);
 
     $actions = $this->buildActionView($poll);
-    $properties = $this->buildPropertyView($poll);
+    $properties = $this->buildPropertyView($poll, $actions);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName('V'.$poll->getID()));
+    $crumbs->addTextCrumb('V'.$poll->getID());
 
-    $xactions = $this->buildTransactions($poll);
+    $timeline = $this->buildTransactionTimeline(
+      $poll,
+      new PhabricatorSlowvoteTransactionQuery());
     $add_comment = $this->buildCommentForm($poll);
+
+    $object_box = id(new PHUIObjectBoxView())
+      ->setHeader($header)
+      ->addPropertyList($properties);
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $header,
-        $actions,
-        $properties,
+        $object_box,
         phutil_tag(
           'div',
           array(
-            'class' => 'ml',
+            'class' => 'mlt mml mmr',
           ),
           $poll_view),
-        $xaction_header,
-        $xactions,
+        $timeline,
         $add_comment,
       ),
       array(
         'title' => 'V'.$poll->getID().' '.$poll->getQuestion(),
-        'device' => true,
         'pageObjects' => array($poll->getPHID()),
       ));
   }
@@ -93,31 +94,39 @@ final class PhabricatorSlowvotePollController
       $poll,
       PhabricatorPolicyCapability::CAN_EDIT);
 
+    $is_closed = $poll->getIsClosed();
+    $close_poll_text = $is_closed ? pht('Reopen Poll') : pht('Close Poll');
+    $close_poll_icon = $is_closed ? 'fa-play-circle-o' : 'fa-ban';
+
     $view->addAction(
       id(new PhabricatorActionView())
         ->setName(pht('Edit Poll'))
-        ->setIcon('edit')
+        ->setIcon('fa-pencil')
         ->setHref($this->getApplicationURI('edit/'.$poll->getID().'/'))
         ->setDisabled(!$can_edit)
         ->setWorkflow(!$can_edit));
 
+    $view->addAction(
+      id(new PhabricatorActionView())
+        ->setName($close_poll_text)
+        ->setIcon($close_poll_icon)
+        ->setHref($this->getApplicationURI('close/'.$poll->getID().'/'))
+        ->setDisabled(!$can_edit)
+        ->setWorkflow(true));
+
     return $view;
   }
 
-  private function buildPropertyView(PhabricatorSlowvotePoll $poll) {
+  private function buildPropertyView(
+    PhabricatorSlowvotePoll $poll,
+    PhabricatorActionListView $actions) {
+
     $viewer = $this->getRequest()->getUser();
 
-    $view = id(new PhabricatorPropertyListView())
+    $view = id(new PHUIPropertyListView())
       ->setUser($viewer)
-      ->setObject($poll);
-
-    $descriptions = PhabricatorPolicyQuery::renderPolicyDescriptions(
-      $viewer,
-      $poll);
-
-    $view->addProperty(
-      pht('Visible To'),
-      $descriptions[PhabricatorPolicyCapability::CAN_VIEW]);
+      ->setObject($poll)
+      ->setActionList($actions);
 
     $view->invokeWillRenderEvent();
 
@@ -133,63 +142,24 @@ final class PhabricatorSlowvotePollController
     return $view;
   }
 
-  private function buildTransactions(PhabricatorSlowvotePoll $poll) {
-    $viewer = $this->getRequest()->getUser();
-
-    $xactions = id(new PhabricatorSlowvoteTransactionQuery())
-      ->setViewer($viewer)
-      ->withObjectPHIDs(array($poll->getPHID()))
-      ->execute();
-
-    $engine = id(new PhabricatorMarkupEngine())
-      ->setViewer($viewer);
-    foreach ($xactions as $xaction) {
-      if ($xaction->getComment()) {
-        $engine->addObject(
-          $xaction->getComment(),
-          PhabricatorApplicationTransactionComment::MARKUP_FIELD_COMMENT);
-      }
-    }
-    $engine->process();
-
-    $timeline = id(new PhabricatorApplicationTransactionView())
-      ->setUser($viewer)
-      ->setObjectPHID($poll->getPHID())
-      ->setTransactions($xactions)
-      ->setMarkupEngine($engine);
-
-    return $timeline;
-  }
-
   private function buildCommentForm(PhabricatorSlowvotePoll $poll) {
     $viewer = $this->getRequest()->getUser();
 
     $is_serious = PhabricatorEnv::getEnvConfig('phabricator.serious-business');
 
-    $add_comment_header = id(new PhabricatorHeaderView())
-      ->setHeader(
-        $is_serious
-          ? pht('Add Comment')
-          : pht('Enter Deliberations'));
-
-    $submit_button_name = $is_serious
+    $add_comment_header = $is_serious
       ? pht('Add Comment')
-      : pht('Perhaps');
+      : pht('Enter Deliberations');
 
     $draft = PhabricatorDraft::newFromUserAndKey($viewer, $poll->getPHID());
 
-    $add_comment_form = id(new PhabricatorApplicationTransactionCommentView())
+    return id(new PhabricatorApplicationTransactionCommentView())
       ->setUser($viewer)
       ->setObjectPHID($poll->getPHID())
       ->setDraft($draft)
+      ->setHeaderText($add_comment_header)
       ->setAction($this->getApplicationURI('/comment/'.$poll->getID().'/'))
-      ->setSubmitButtonName($submit_button_name);
-
-    return array(
-      $add_comment_header,
-      $add_comment_form,
-    );
+      ->setSubmitButtonName(pht('Add Comment'));
   }
-
 
 }

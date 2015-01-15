@@ -7,24 +7,32 @@ final class PhabricatorStorageManagementUpgradeWorkflow
     $this
       ->setName('upgrade')
       ->setExamples('**upgrade** [__options__]')
-      ->setSynopsis("Upgrade database schemata.")
+      ->setSynopsis('Upgrade database schemata.')
       ->setArguments(
         array(
           array(
             'name'  => 'apply',
             'param' => 'patch',
-            'help'  => 'Apply __patch__ explicitly. This is an advanced '.
-                       'feature for development and debugging; you should '.
-                       'not normally use this flag.',
+            'help'  => pht(
+              'Apply __patch__ explicitly. This is an advanced feature for '.
+              'development and debugging; you should not normally use this '.
+              'flag. This skips adjustment.'),
           ),
           array(
             'name'  => 'no-quickstart',
-            'help'  => 'Build storage patch-by-patch from scatch, even if it '.
-                       'could be loaded from the quickstart template.',
+            'help'  => pht(
+              'Build storage patch-by-patch from scatch, even if it could '.
+              'be loaded from the quickstart template.'),
           ),
           array(
             'name'  => 'init-only',
-            'help'  => 'Initialize storage only; do not apply patches.',
+            'help'  => pht(
+              'Initialize storage only; do not apply patches or adjustments.'),
+          ),
+          array(
+            'name' => 'no-adjust',
+            'help' => pht(
+              'Do not apply storage adjustments after storage upgrades.'),
           ),
         ));
   }
@@ -38,9 +46,9 @@ final class PhabricatorStorageManagementUpgradeWorkflow
 
     if (!$is_dry && !$is_force) {
       echo phutil_console_wrap(
-        "Before running storage upgrades, you should take down the ".
-        "Phabricator web interface and stop any running Phabricator ".
-        "daemons (you can disable this warning with --force).");
+        'Before running storage upgrades, you should take down the '.
+        'Phabricator web interface and stop any running Phabricator '.
+        'daemons (you can disable this warning with --force).');
 
       if (!phutil_console_confirm('Are you ready to continue?')) {
         echo "Cancelled.\n";
@@ -59,6 +67,7 @@ final class PhabricatorStorageManagementUpgradeWorkflow
 
     $no_quickstart = $args->getArg('no-quickstart');
     $init_only = $args->getArg('init-only');
+    $no_adjust = $args->getArg('no-adjust');
 
     $applied = $api->getAppliedPatches();
     if ($applied === null) {
@@ -71,8 +80,8 @@ final class PhabricatorStorageManagementUpgradeWorkflow
 
       if ($apply_only) {
         throw new PhutilArgumentUsageException(
-          "Storage has not been initialized yet, you must initialize storage ".
-          "before selectively applying patches.");
+          'Storage has not been initialized yet, you must initialize storage '.
+          'before selectively applying patches.');
         return 1;
       }
 
@@ -107,7 +116,7 @@ final class PhabricatorStorageManagementUpgradeWorkflow
     }
 
     $applied = $api->getAppliedPatches();
-    $applied = array_fill_keys($applied, true);
+    $applied = array_fuse($applied);
 
     $skip_mark = false;
     if ($apply_only) {
@@ -178,7 +187,7 @@ final class PhabricatorStorageManagementUpgradeWorkflow
       if (!$applied_something) {
         if (count($patches)) {
           throw new Exception(
-            "Some patches could not be applied: ".
+            'Some patches could not be applied: '.
             implode(', ', array_keys($patches)));
         } else if (!$is_dry && !$apply_only) {
           echo "Storage is up to date. Use 'storage status' for details.\n";
@@ -187,7 +196,15 @@ final class PhabricatorStorageManagementUpgradeWorkflow
       }
     }
 
-    return 0;
+    $console = PhutilConsole::getConsole();
+    if ($no_adjust || $init_only || $apply_only) {
+      $console->writeOut(
+        "%s\n",
+        pht('Declining to apply storage adjustments.'));
+      return 0;
+    } else {
+      return $this->adjustSchemata($is_force, $unsafe = false, $is_dry);
+    }
   }
 
 }

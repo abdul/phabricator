@@ -7,12 +7,17 @@ final class FeedPublisherHTTPWorker extends FeedPushWorker {
     $data = $story->getStoryData();
 
     $uri = idx($this->getTaskData(), 'uri');
+    $valid_uris = PhabricatorEnv::getEnvConfig('feed.http-hooks');
+    if (!in_array($uri, $valid_uris)) {
+      throw new PhabricatorWorkerPermanentFailureException();
+    }
 
     $post_data = array(
       'storyID'         => $data->getID(),
       'storyType'       => $data->getStoryType(),
       'storyData'       => $data->getStoryData(),
       'storyAuthorPHID' => $data->getAuthorPHID(),
+      'storyText'       => $story->renderText(),
       'epoch'           => $data->getEpoch(),
     );
 

@@ -1,9 +1,17 @@
 <?php
 
-/**
- * @group search
- */
-abstract class PhabricatorSearchDocumentIndexer {
+abstract class PhabricatorSearchDocumentIndexer extends Phobject {
+
+  private $context;
+
+  protected function setContext($context) {
+    $this->context = $context;
+    return $this;
+  }
+
+  protected function getContext() {
+    return $this->context;
+  }
 
   abstract public function getIndexableObject();
   abstract protected function buildAbstractDocumentByPHID($phid);
@@ -33,9 +41,33 @@ abstract class PhabricatorSearchDocumentIndexer {
     return $object;
   }
 
-  public function indexDocumentByPHID($phid) {
+  public function indexDocumentByPHID($phid, $context) {
     try {
+      $this->setContext($context);
+
       $document = $this->buildAbstractDocumentByPHID($phid);
+      if ($document === null) {
+        // This indexer doesn't build a document index, so we're done.
+        return $this;
+      }
+
+      $object = $this->loadDocumentByPHID($phid);
+
+      // Automatically rebuild CustomField indexes if the object uses custom
+      // fields.
+      if ($object instanceof PhabricatorCustomFieldInterface) {
+        $this->indexCustomFields($document, $object);
+      }
+
+      // Automatically rebuild subscriber indexes if the object is subscribable.
+      if ($object instanceof PhabricatorSubscribableInterface) {
+        $this->indexSubscribers($document);
+      }
+
+      // Automatically build project relationships
+      if ($object instanceof PhabricatorProjectInterface) {
+        $this->indexProjects($document, $object);
+      }
 
       $engine = PhabricatorSearchEngineSelector::newSelector()->newEngine();
       try {
@@ -44,13 +76,14 @@ abstract class PhabricatorSearchDocumentIndexer {
         $phid = $document->getPHID();
         $class = get_class($engine);
 
-        phlog("Unable to index document {$phid} by engine {$class}.");
+        phlog("Unable to index document {$phid} with engine {$class}.");
         phlog($ex);
       }
 
+      $this->dispatchDidUpdateIndexEvent($phid, $document);
     } catch (Exception $ex) {
       $class = get_class($this);
-      phlog("Unable to build document {$phid} by indexer {$class}.");
+      phlog("Unable to build document {$phid} with indexer {$class}.");
       phlog($ex);
     }
 
@@ -82,6 +115,24 @@ abstract class PhabricatorSearchDocumentIndexer {
     }
   }
 
+  protected function indexProjects(
+    PhabricatorSearchAbstractDocument $doc,
+    PhabricatorProjectInterface $object) {
+
+    $project_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
+      $object->getPHID(),
+      PhabricatorProjectObjectHasProjectEdgeType::EDGECONST);
+    if ($project_phids) {
+      foreach ($project_phids as $project_phid) {
+        $doc->addRelationship(
+          PhabricatorSearchRelationship::RELATIONSHIP_PROJECT,
+          $project_phid,
+          PhabricatorProjectProjectPHIDType::TYPECONST,
+          $doc->getDocumentModified()); // Bogus timestamp.
+      }
+    }
+  }
+
   protected function indexTransactions(
     PhabricatorSearchAbstractDocument $doc,
     PhabricatorApplicationTransactionQuery $query,
@@ -90,7 +141,6 @@ abstract class PhabricatorSearchDocumentIndexer {
     $xactions = id(clone $query)
       ->setViewer($this->getViewer())
       ->withObjectPHIDs($phids)
-      ->withTransactionTypes(array(PhabricatorTransactions::TYPE_COMMENT))
       ->execute();
 
     foreach ($xactions as $xaction) {
@@ -103,6 +153,43 @@ abstract class PhabricatorSearchDocumentIndexer {
         PhabricatorSearchField::FIELD_COMMENT,
         $comment->getContent());
     }
+  }
+
+  protected function indexCustomFields(
+    PhabricatorSearchAbstractDocument $document,
+    PhabricatorCustomFieldInterface $object) {
+
+    // Rebuild the ApplicationSearch indexes. These are internal and not part of
+    // the fulltext search, but putting them in this workflow allows users to
+    // use the same tools to rebuild the indexes, which is easy to understand.
+
+    $field_list = PhabricatorCustomField::getObjectFields(
+      $object,
+      PhabricatorCustomField::ROLE_DEFAULT);
+
+    $field_list->setViewer($this->getViewer());
+    $field_list->readFieldsFromStorage($object);
+
+    // Rebuild ApplicationSearch indexes.
+    $field_list->rebuildIndexes($object);
+
+    // Rebuild global search indexes.
+    $field_list->updateAbstractDocument($document);
+  }
+
+  private function dispatchDidUpdateIndexEvent(
+    $phid,
+    PhabricatorSearchAbstractDocument $document) {
+
+    $event = new PhabricatorEvent(
+      PhabricatorEventType::TYPE_SEARCH_DIDUPDATEINDEX,
+      array(
+        'phid'      => $phid,
+        'object'    => $this->loadDocumentByPHID($phid),
+        'document'  => $document,
+      ));
+    $event->setUser($this->getViewer());
+    PhutilEventEngine::dispatchEvent($event);
   }
 
 }

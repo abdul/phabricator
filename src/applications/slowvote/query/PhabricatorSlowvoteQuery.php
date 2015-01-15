@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group slowvote
- */
 final class PhabricatorSlowvoteQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -10,6 +7,7 @@ final class PhabricatorSlowvoteQuery
   private $phids;
   private $authorPHIDs;
   private $withVotesByViewer;
+  private $isClosed;
 
   private $needOptions;
   private $needChoices;
@@ -35,6 +33,11 @@ final class PhabricatorSlowvoteQuery
     return $this;
   }
 
+  public function withIsClosed($with_closed) {
+    $this->isClosed = $with_closed;
+    return $this;
+  }
+
   public function needOptions($need_options) {
     $this->needOptions = $need_options;
     return $this;
@@ -50,7 +53,7 @@ final class PhabricatorSlowvoteQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhabricatorSlowvotePoll();
     $conn_r = $table->establishConnection('r');
 
@@ -66,7 +69,7 @@ final class PhabricatorSlowvoteQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $polls) {
+  protected function willFilterPage(array $polls) {
     assert_instances_of($polls, 'PhabricatorSlowvotePoll');
 
     $ids = mpull($polls, 'getID');
@@ -146,6 +149,13 @@ final class PhabricatorSlowvoteQuery
         $this->authorPHIDs);
     }
 
+    if ($this->isClosed !== null) {
+      $where[] = qsprintf(
+        $conn_r,
+        'p.isClosed = %d',
+        (int)$this->isClosed);
+    }
+
     $where[] = $this->buildPagingClause($conn_r);
     return $this->formatWhereClause($where);
   }
@@ -166,6 +176,10 @@ final class PhabricatorSlowvoteQuery
 
   protected function getPagingColumn() {
     return 'p.id';
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorSlowvoteApplication';
   }
 
 }

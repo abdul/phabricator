@@ -9,16 +9,6 @@
  */
 
 JX.behavior('dark-console', function(config, statics) {
-  var root = statics.root || setup_console();
-
-  config.key = config.key || root.getAttribute('data-console-key');
-
-  if (!('color' in config)) {
-    config.color = root.getAttribute('data-console-color');
-  }
-
-  add_request(config);
-
   // Do first-time setup.
   function setup_console() {
     statics.root = JX.$('darkconsole');
@@ -59,6 +49,14 @@ JX.behavior('dark-console', function(config, statics) {
     return statics.root;
   }
 
+  var root = statics.root || setup_console();
+
+  config.key = config.key || root.getAttribute('data-console-key');
+
+  if (!('color' in config)) {
+    config.color = root.getAttribute('data-console-color');
+  }
+
 
   // Add a new request to the console (initial page load, or new Ajax response).
   function add_request(config) {
@@ -90,7 +88,7 @@ JX.behavior('dark-console', function(config, statics) {
     if (!color) {
       return null;
     }
-    return JX.$N('span', {style: {color: color}}, "\u2022");
+    return JX.$N('span', {style: {color: color}}, '\u2022');
   }
 
 
@@ -225,7 +223,7 @@ JX.behavior('dark-console', function(config, statics) {
   function install_shortcut() {
     var desc = 'Toggle visibility of DarkConsole.';
     new JX.KeyboardShortcut('`', desc)
-      .setHandler(function(manager) {
+      .setHandler(function() {
         statics.visible = !statics.visible;
 
         if (statics.visible) {
@@ -248,4 +246,5 @@ JX.behavior('dark-console', function(config, statics) {
       .register();
   }
 
+  add_request(config);
 });

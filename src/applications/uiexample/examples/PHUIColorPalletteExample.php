@@ -25,10 +25,12 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
       'daeaf3' => '83% Blue {$lightblue}',
       '3498db' => 'Sky Base {$sky}',
       'ddeef9' => '83% Sky {$lightsky}',
-      'c6539d' => 'Base Indigo {$indigo}',
-      'f5e2ef' => '83% Indigo {$lightindigo}',
+      '6e5cb6' => 'Base Indigo {$indigo}',
+      'eae6f7' => '83% Indigo {$lightindigo}',
+      'da49be' => 'Base Pink {$pink}',
+      'fbeaf8' => '83% Pink {$lightpink}',
       '8e44ad' => 'Base Violet {$violet}',
-      'ecdff1' => '83% Violet {$lightviolet}'
+      'ecdff1' => '83% Violet {$lightviolet}',
     );
 
     $greys = array(
@@ -40,6 +42,7 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
       '4B4D51' => 'Dark Grey Text {$darkgreytext}',
       'F7F7F7' => 'Light Grey Background {$lightgreybackground}',
       'EBECEE' => 'Grey Background {$greybackground}',
+      'DFE0E2' => 'Dark Grey Background {$darkgreybackground}',
     );
 
     $blues = array(
@@ -48,7 +51,7 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
       '95A6C5' => 'Blue Border {$blueborder}',
       '626E82' => 'Dark Blue Border {$darkblueborder}',
       'F8F9FC' => 'Light Blue Background {$lightbluebackground}',
-      'DFE0E2' => 'Blue Background {$bluebackground}',
+      'DAE7FF' => 'Blue Background {$bluebackground}',
       '8C98B8' => 'Light Blue Text {$lightbluetext}',
       '6B748C' => 'Blue Text {$bluetext}',
       '464C5C' => 'Dark Blue Text {$darkbluetext}',
@@ -60,7 +63,8 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
         'div',
         array(
           'style' => 'background-color: #'.$color.';',
-          'class' => 'pl'),
+          'class' => 'pl',
+        ),
         $name.' #'.$color);
     }
 
@@ -70,7 +74,8 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
         'div',
         array(
           'style' => 'background-color: #'.$color.';',
-          'class' => 'pl'),
+          'class' => 'pl',
+        ),
         $name.' #'.$color);
     }
 
@@ -83,7 +88,8 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
         'div',
         array(
           'style' => 'background-color: #'.$color.';',
-          'class' => 'pl'),
+          'class' => 'pl',
+        ),
         $name.' #'.$color);
     }
 
@@ -91,56 +97,29 @@ final class PHUIColorPalletteExample extends PhabricatorUIExample {
       'a',
       array(
         'href' => 'http://color.hailpixel.com/#'.implode(',', $url),
-        'class' => 'button grey mlb'),
+        'class' => 'button grey mlb',
+      ),
       'Color Palette');
 
-    $layout1 = id(new PHUIBoxView())
-      ->appendChild($d_column)
-      ->setShadow(true)
-      ->addPadding(PHUI::PADDING_LARGE);
+    $wrap1 = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Greys'))
+      ->appendChild($d_column);
 
-    $layout1b = id(new PHUIBoxView())
-      ->appendChild($b_column)
-      ->setShadow(true)
-      ->addPadding(PHUI::PADDING_LARGE);
+    $wrap2 = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Blues'))
+      ->appendChild($b_column);
 
-    $layout2 = id(new PHUIBoxView())
-      ->appendChild($color_url)
-      ->appendChild($c_column)
-      ->setShadow(true)
-      ->addPadding(PHUI::PADDING_LARGE);
-
-    $head1 = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Greys'));
-
-    $head1b = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Blues'));
-
-    $head2 = id(new PhabricatorHeaderView())
-      ->setHeader(pht('Colors'));
-
-    $wrap1 = id(new PHUIBoxView())
-      ->appendChild($layout1)
-      ->addMargin(PHUI::MARGIN_LARGE);
-
-    $wrap1b = id(new PHUIBoxView())
-      ->appendChild($layout1b)
-      ->addMargin(PHUI::MARGIN_LARGE);
-
-    $wrap2 = id(new PHUIBoxView())
-      ->appendChild($layout2)
-      ->addMargin(PHUI::MARGIN_LARGE);
+    $wrap3 = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Colors'))
+      ->appendChild($c_column);
 
     return phutil_tag(
       'div',
         array(),
         array(
-          $head1,
           $wrap1,
-          $head1b,
-          $wrap1b,
-          $head2,
-          $wrap2
+          $wrap2,
+          $wrap3,
         ));
-        }
+  }
 }

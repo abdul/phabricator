@@ -59,28 +59,25 @@ final class DivinerAtomController extends DivinerController {
     $atom = $symbol->getAtom();
     $crumbs = $this->buildApplicationCrumbs();
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($book->getShortTitle())
-        ->setHref('/book/'.$book->getName().'/'));
+    $crumbs->addTextCrumb(
+      $book->getShortTitle(),
+      '/book/'.$book->getName().'/');
 
     $atom_short_title = $atom->getDocblockMetaValue(
       'short',
       $symbol->getTitle());
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($atom_short_title));
+    $crumbs->addTextCrumb($atom_short_title);
 
-    $header = id(new PhabricatorHeaderView())
+    $header = id(new PHUIHeaderView())
       ->setHeader($this->renderFullSignature($symbol))
       ->addTag(
-        id(new PhabricatorTagView())
-          ->setType(PhabricatorTagView::TYPE_STATE)
-          ->setBackgroundColor(PhabricatorTagView::COLOR_BLUE)
+        id(new PHUITagView())
+          ->setType(PHUITagView::TYPE_STATE)
+          ->setBackgroundColor(PHUITagView::COLOR_BLUE)
           ->setName(DivinerAtom::getAtomTypeNameString($atom->getType())));
 
-    $properties = id(new PhabricatorPropertyListView());
+    $properties = id(new PHUIPropertyListView());
 
     $group = $atom->getProperty('group');
     if ($group) {
@@ -118,12 +115,14 @@ final class DivinerAtomController extends DivinerController {
     $toc = $engine->getEngineMetadata(
       $symbol,
       $field,
-      PhutilRemarkupEngineRemarkupHeaderBlockRule::KEY_HEADER_TOC,
+      PhutilRemarkupHeaderBlockRule::KEY_HEADER_TOC,
       array());
 
     $document = id(new PHUIDocumentView())
       ->setBook($book->getTitle(), $group_name)
       ->setHeader($header)
+      ->addClass('diviner-view')
+      ->setFontKit(PHUIDocumentView::FONT_SOURCE_SANS)
       ->appendChild($properties)
       ->appendChild($warnings)
       ->appendChild($content);
@@ -153,7 +152,7 @@ final class DivinerAtomController extends DivinerController {
 
         foreach ($tasks as $spec) {
           $section->addContent(
-            id(new PhabricatorHeaderView())
+            id(new PHUIHeaderView())
               ->setNoBackground(true)
               ->setHeader($spec['title']));
 
@@ -175,7 +174,8 @@ final class DivinerAtomController extends DivinerController {
                 $item = array(
                   $item,
                   " \xE2\x80\x94 ",
-                  $atom->getSummary());
+                  $atom->getSummary(),
+                );
               }
 
               $list_items[] = phutil_tag('li', array(), $item);
@@ -203,15 +203,15 @@ final class DivinerAtomController extends DivinerController {
 
       foreach ($methods as $spec) {
         $matom = last($spec['atoms']);
-        $method_header = id(new PhabricatorHeaderView())
+        $method_header = id(new PHUIHeaderView())
           ->setNoBackground(true);
 
         $inherited = $spec['inherited'];
         if ($inherited) {
           $method_header->addTag(
-            id(new PhabricatorTagView())
-              ->setType(PhabricatorTagView::TYPE_STATE)
-              ->setBackgroundColor(PhabricatorTagView::COLOR_GREY)
+            id(new PHUITagView())
+              ->setType(PHUITagView::TYPE_STATE)
+              ->setBackgroundColor(PHUITagView::COLOR_GREY)
               ->setName(pht('Inherited')));
         }
 
@@ -250,12 +250,11 @@ final class DivinerAtomController extends DivinerController {
       ),
       array(
         'title' => $symbol->getTitle(),
-        'device' => true,
       ));
   }
 
   private function buildExtendsAndImplements(
-    PhabricatorPropertyListView $view,
+    PHUIPropertyListView $view,
     DivinerLiveSymbol $symbol) {
 
     $lineage = $this->getExtendsLineage($symbol);
@@ -265,7 +264,8 @@ final class DivinerAtomController extends DivinerController {
         $tags[] = $this->renderAtomTag($item);
       }
 
-      $tags = phutil_implode_html(" \xE2\x96\xB6 ", $tags);
+      $caret = phutil_tag('span', array('class' => 'caret-right msl msr'));
+      $tags = phutil_implode_html($caret, $tags);
       $view->addProperty(pht('Extends'), $tags);
     }
 
@@ -281,7 +281,8 @@ final class DivinerAtomController extends DivinerController {
           $items[] = array(
             $this->renderAtomTag($iface),
             "  \xE2\x97\x80  ",
-            $this->renderAtomTag($via));
+            $this->renderAtomTag($via),
+          );
         }
       }
 
@@ -293,8 +294,8 @@ final class DivinerAtomController extends DivinerController {
   }
 
   private function renderAtomTag(DivinerLiveSymbol $symbol) {
-    return id(new PhabricatorTagView())
-      ->setType(PhabricatorTagView::TYPE_OBJECT)
+    return id(new PHUITagView())
+      ->setType(PHUITagView::TYPE_OBJECT)
       ->setName($symbol->getName())
       ->setHref($symbol->getURI());
   }
@@ -334,7 +335,7 @@ final class DivinerAtomController extends DivinerController {
   }
 
   private function buildDefined(
-    PhabricatorPropertyListView $view,
+    PHUIPropertyListView $view,
     DivinerLiveSymbol $symbol) {
 
     $atom = $symbol->getAtom();
@@ -463,7 +464,7 @@ final class DivinerAtomController extends DivinerController {
       case DivinerAtom::TYPE_FUNCTION:
         break;
       default:
-        return null;
+        return $symbol->getTitle();
     }
 
     $atom = $symbol->getAtom();

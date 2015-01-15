@@ -39,7 +39,6 @@ final class PhabricatorConfigAllController
       );
     }
     $table = id(new AphrontTableView($rows))
-      ->setDeviceReadyTable(true)
       ->setColumnClasses(
         array(
           '',
@@ -56,21 +55,23 @@ final class PhabricatorConfigAllController
 
     $crumbs = $this
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName($title));
+      ->addTextCrumb($title);
 
-    $panel = new AphrontPanelView();
+    $panel = new PHUIObjectBoxView();
+    $panel->setHeaderText(pht('Current Settings'));
     $panel->appendChild($table);
-    $panel->setNoBackground();
 
     $versions = $this->loadVersions();
 
-    $version_property_list = id(new PhabricatorPropertyListView());
+    $version_property_list = id(new PHUIPropertyListView());
     foreach ($versions as $version) {
       list($name, $hash) = $version;
       $version_property_list->addProperty($name, $hash);
     }
+
+    $object_box = id(new PHUIObjectBoxView())
+      ->setHeaderText(pht('Current Version'))
+      ->addPropertyList($version_property_list);
 
     $phabricator_root = dirname(phutil_get_library_root('phabricator'));
     $version_path = $phabricator_root.'/conf/local/VERSION';
@@ -84,7 +85,7 @@ final class PhabricatorConfigAllController
     $nav = $this->buildSideNavView();
     $nav->selectFilter('all/');
     $nav->setCrumbs($crumbs);
-    $nav->appendChild($version_property_list);
+    $nav->appendChild($object_box);
     $nav->appendChild($panel);
 
 
@@ -92,7 +93,6 @@ final class PhabricatorConfigAllController
       $nav,
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

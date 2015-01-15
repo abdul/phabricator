@@ -20,20 +20,25 @@ final class HeraldEngine {
     return $this->dryRun;
   }
 
-  public function getRule($id) {
-    return idx($this->rules, $id);
+  public function getRule($phid) {
+    return idx($this->rules, $phid);
   }
 
-  public static function loadAndApplyRules(HeraldAdapter $adapter) {
-    $rules = id(new HeraldRuleQuery())
+  public function loadRulesForAdapter(HeraldAdapter $adapter) {
+    return id(new HeraldRuleQuery())
       ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->withDisabled(false)
       ->withContentTypes(array($adapter->getAdapterContentType()))
       ->needConditionsAndActions(true)
       ->needAppliedToPHIDs(array($adapter->getPHID()))
       ->needValidateAuthors(true)
       ->execute();
+  }
 
+  public static function loadAndApplyRules(HeraldAdapter $adapter) {
     $engine = new HeraldEngine();
+
+    $rules = $engine->loadRulesForAdapter($adapter);
     $effects = $engine->applyRules($rules, $adapter);
     $engine->applyEffects($effects, $adapter, $rules);
 
@@ -44,7 +49,9 @@ final class HeraldEngine {
     assert_instances_of($rules, 'HeraldRule');
     $t_start = microtime(true);
 
-    $rules = mpull($rules, null, 'getID');
+    // Rules execute in a well-defined order: sort them into execution order.
+    $rules = msort($rules, 'getRuleExecutionOrderSortKey');
+    $rules = mpull($rules, null, 'getPHID');
 
     $this->transcript = new HeraldTranscript();
     $this->transcript->setObjectPHID((string)$object->getPHID());
@@ -54,22 +61,28 @@ final class HeraldEngine {
     $this->object  = $object;
 
     $effects = array();
-    foreach ($rules as $id => $rule) {
+    foreach ($rules as $phid => $rule) {
       $this->stack = array();
+
+      $policy_first = HeraldRepetitionPolicyConfig::FIRST;
+      $policy_first_int = HeraldRepetitionPolicyConfig::toInt($policy_first);
+      $is_first_only = ($rule->getRepetitionPolicy() == $policy_first_int);
+
       try {
-        if (($rule->getRepetitionPolicy() ==
-             HeraldRepetitionPolicyConfig::FIRST) &&
+        if (!$this->getDryRun() &&
+            $is_first_only &&
             $rule->getRuleApplied($object->getPHID())) {
-          // This rule is only supposed to be applied a single time, and it's
-          // aleady been applied, so this is an automatic failure.
+          // This is not a dry run, and this rule is only supposed to be
+          // applied a single time, and it's already been applied...
+          // That means automatic failure.
           $xscript = id(new HeraldRuleTranscript())
-            ->setRuleID($id)
+            ->setRuleID($rule->getID())
             ->setResult(false)
             ->setRuleName($rule->getName())
             ->setRuleOwner($rule->getAuthorPHID())
             ->setReason(
-              "This rule is only supposed to be repeated a single time, ".
-              "and it has already been applied.");
+              'This rule is only supposed to be repeated a single time, '.
+              'and it has already been applied.');
           $this->transcript->addRuleTranscript($xscript);
           $rule_matches = false;
         } else {
@@ -95,7 +108,7 @@ final class HeraldEngine {
         }
         $rule_matches = false;
       }
-      $this->results[$id] = $rule_matches;
+      $this->results[$phid] = $rule_matches;
 
       if ($rule_matches) {
         foreach ($this->getRuleEffects($rule, $object) as $effect) {
@@ -203,25 +216,25 @@ final class HeraldEngine {
     HeraldRule $rule,
     HeraldAdapter $object) {
 
-    $id = $rule->getID();
+    $phid = $rule->getPHID();
 
-    if (isset($this->results[$id])) {
+    if (isset($this->results[$phid])) {
       // If we've already evaluated this rule because another rule depends
       // on it, we don't need to reevaluate it.
-      return $this->results[$id];
+      return $this->results[$phid];
     }
 
-    if (isset($this->stack[$id])) {
+    if (isset($this->stack[$phid])) {
       // We've recursed, fail all of the rules on the stack. This happens when
       // there's a dependency cycle with "Rule conditions match for rule ..."
       // conditions.
-      foreach ($this->stack as $rule_id => $ignored) {
-        $this->results[$rule_id] = false;
+      foreach ($this->stack as $rule_phid => $ignored) {
+        $this->results[$rule_phid] = false;
       }
       throw new HeraldRecursiveConditionsException();
     }
 
-    $this->stack[$id] = true;
+    $this->stack[$phid] = true;
 
     $all = $rule->getMustMatchAll();
 
@@ -231,28 +244,41 @@ final class HeraldEngine {
 
     $local_version = id(new HeraldRule())->getConfigVersion();
     if ($rule->getConfigVersion() > $local_version) {
-      $reason = "Rule could not be processed, it was created with a newer ".
-                "version of Herald.";
+      $reason = pht(
+        'Rule could not be processed, it was created with a newer version '.
+        'of Herald.');
       $result = false;
     } else if (!$conditions) {
-      $reason = "Rule failed automatically because it has no conditions.";
+      $reason = pht(
+        'Rule failed automatically because it has no conditions.');
       $result = false;
     } else if (!$rule->hasValidAuthor()) {
-      $reason = "Rule failed automatically because its owner is invalid ".
-                "or disabled.";
+      $reason = pht(
+        'Rule failed automatically because its owner is invalid '.
+        'or disabled.');
+      $result = false;
+    } else if (!$this->canAuthorViewObject($rule, $object)) {
+      $reason = pht(
+        'Rule failed automatically because it is a personal rule and its '.
+        'owner can not see the object.');
+      $result = false;
+    } else if (!$this->canRuleApplyToObject($rule, $object)) {
+      $reason = pht(
+        'Rule failed automatically because it is an object rule which is '.
+        'not relevant for this object.');
       $result = false;
     } else {
       foreach ($conditions as $condition) {
         $match = $this->doesConditionMatch($rule, $condition, $object);
 
         if (!$all && $match) {
-          $reason = "Any condition matched.";
+          $reason = 'Any condition matched.';
           $result = true;
           break;
         }
 
         if ($all && !$match) {
-          $reason = "Not all conditions matched.";
+          $reason = 'Not all conditions matched.';
           $result = false;
           break;
         }
@@ -260,10 +286,10 @@ final class HeraldEngine {
 
       if ($result === null) {
         if ($all) {
-          $reason = "All conditions matched.";
+          $reason = 'All conditions matched.';
           $result = true;
         } else {
-          $reason = "No conditions matched.";
+          $reason = 'No conditions matched.';
           $result = false;
         }
       }
@@ -348,15 +374,67 @@ final class HeraldEngine {
       $effect->setTarget($action->getTarget());
 
       $effect->setRuleID($rule->getID());
+      $effect->setRulePHID($rule->getPHID());
 
       $name = $rule->getName();
       $id   = $rule->getID();
       $effect->setReason(
-        'Conditions were met for Herald rule "'.$name.'" (#'.$id.').');
+        pht(
+          'Conditions were met for %s',
+          "H{$id} {$name}"));
 
       $effects[] = $effect;
     }
     return $effects;
+  }
+
+  private function canAuthorViewObject(
+    HeraldRule $rule,
+    HeraldAdapter $adapter) {
+
+    // Authorship is irrelevant for global rules and object rules.
+    if ($rule->isGlobalRule() || $rule->isObjectRule()) {
+      return true;
+    }
+
+    // The author must be able to create rules for the adapter's content type.
+    // In particular, this means that the application must be installed and
+    // accessible to the user. For example, if a user writes a Differential
+    // rule and then loses access to Differential, this disables the rule.
+    $enabled = HeraldAdapter::getEnabledAdapterMap($rule->getAuthor());
+    if (empty($enabled[$adapter->getAdapterContentType()])) {
+      return false;
+    }
+
+    // Finally, the author must be able to see the object itself. You can't
+    // write a personal rule that CC's you on revisions you wouldn't otherwise
+    // be able to see, for example.
+    $object = $adapter->getObject();
+    return PhabricatorPolicyFilter::hasCapability(
+      $rule->getAuthor(),
+      $object,
+      PhabricatorPolicyCapability::CAN_VIEW);
+  }
+
+  private function canRuleApplyToObject(
+    HeraldRule $rule,
+    HeraldAdapter $adapter) {
+
+    // Rules which are not object rules can apply to anything.
+    if (!$rule->isObjectRule()) {
+      return true;
+    }
+
+    $trigger_phid = $rule->getTriggerObjectPHID();
+    $object_phids = $adapter->getTriggerObjectPHIDs();
+
+    if ($object_phids) {
+      if (in_array($trigger_phid, $object_phids)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
 }

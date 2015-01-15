@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhamePostNewController extends PhameController {
 
   private $id;
@@ -69,10 +66,7 @@ final class PhamePostNewController extends PhameController {
     $nav->selectFilter('post/new');
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title)
-        ->setHref($view_uri));
+    $crumbs->addTextCrumb($title, $view_uri);
     $nav->appendChild($crumbs);
 
     if (!$blogs) {
@@ -117,7 +111,7 @@ final class PhamePostNewController extends PhameController {
       }
 
 
-      $form_box = id(new PHUIFormBoxView())
+      $form_box = id(new PHUIObjectBoxView())
         ->setHeaderText($title)
         ->setForm($form);
 
@@ -128,7 +122,7 @@ final class PhamePostNewController extends PhameController {
       $nav,
       array(
         'title'   => $title,
-        'device'  => true,
       ));
   }
+
 }

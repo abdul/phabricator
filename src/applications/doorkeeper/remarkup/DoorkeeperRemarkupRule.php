@@ -1,7 +1,6 @@
 <?php
 
-abstract class DoorkeeperRemarkupRule
-  extends PhutilRemarkupRule {
+abstract class DoorkeeperRemarkupRule extends PhutilRemarkupRule {
 
   const KEY_TAGS = 'doorkeeper.tags';
 
@@ -46,11 +45,11 @@ abstract class DoorkeeperRemarkupRule
       if ($this->getEngine()->isTextMode()) {
         $view = $spec['href'];
       } else {
-        $view = id(new PhabricatorTagView())
+        $view = id(new PHUITagView())
           ->setID($tag_id)
-          ->setName($spec['href'])
-          ->setHref($spec['href'])
-          ->setType(PhabricatorTagView::TYPE_OBJECT)
+          ->setName($this->assertFlatText($spec['href']))
+          ->setHref($this->assertFlatText($spec['href']))
+          ->setType(PHUITagView::TYPE_OBJECT)
           ->setExternal(true);
       }
 

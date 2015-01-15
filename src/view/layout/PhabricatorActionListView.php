@@ -29,7 +29,7 @@ final class PhabricatorActionListView extends AphrontView {
 
   public function render() {
     if (!$this->user) {
-      throw new Exception(pht("Call setUser() before render()!"));
+      throw new Exception(pht('Call setUser() before render()!'));
     }
 
     $event = new PhabricatorEvent(
@@ -42,7 +42,6 @@ final class PhabricatorActionListView extends AphrontView {
     PhutilEventEngine::dispatchEvent($event);
 
     $actions = $event->getValue('actions');
-
     if (!$actions) {
       return null;
     }
@@ -58,7 +57,7 @@ final class PhabricatorActionListView extends AphrontView {
       'ul',
       array(
         'class' => 'phabricator-action-list-view',
-        'id' => $this->id
+        'id' => $this->id,
       ),
       $actions);
   }

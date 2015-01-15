@@ -14,6 +14,12 @@ final class PhabricatorTokenGivenFeedStory
     return $phids;
   }
 
+  public function getRequiredObjectPHIDs() {
+    $phids = array();
+    $phids[] = $this->getValue('tokenPHID');
+    return $phids;
+  }
+
   public function renderView() {
     $view = $this->newStoryView();
     $view->setAppIcon('token-dark');
@@ -22,20 +28,38 @@ final class PhabricatorTokenGivenFeedStory
     $href = $this->getHandle($this->getPrimaryObjectPHID())->getURI();
     $view->setHref($href);
 
-    $title = pht(
-      '%s awarded %s a token.',
-      $this->linkTo($this->getValue('authorPHID')),
-      $this->linkTo($this->getValue('objectPHID')));
-
-    $view->setTitle($title);
+    $view->setTitle($this->renderTitle());
     $view->setImage($this->getHandle($author_phid)->getImageURI());
 
     return $view;
   }
 
-  public function renderText() {
-    // TODO: This is grotesque; the feed notification handler relies on it.
-    return strip_tags(hsprintf('%s', $this->renderView()->render()));
+  private function renderTitle() {
+    $token = $this->getObject($this->getValue('tokenPHID'));
+    $title = pht(
+      '%s awarded %s a %s token.',
+      $this->linkTo($this->getValue('authorPHID')),
+      $this->linkTo($this->getValue('objectPHID')),
+      $token->getName());
+
+    return $title;
   }
+
+  public function renderText() {
+    $old_target = $this->getRenderingTarget();
+    $this->setRenderingTarget(PhabricatorApplicationTransaction::TARGET_TEXT);
+    $title = $this->renderTitle();
+    $this->setRenderingTarget($old_target);
+    return $title;
+  }
+
+  public function renderAsTextForDoorkeeper(
+    DoorkeeperFeedStoryPublisher $publisher) {
+    // TODO: This is slightly wrong, as it does not respect implied context
+    // on the publisher, so it will always say "awarded D123 a token" when it
+    // should sometimes say "awarded this revision a token".
+    return $this->renderText();
+  }
+
 
 }

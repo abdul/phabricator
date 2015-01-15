@@ -8,38 +8,34 @@ final class PhabricatorProjectTestDataGenerator
   public function generate() {
     $title = $this->generateTitle();
     $author = $this->loadPhabrictorUser();
-    $authorPHID = $author->getPHID();
+    $author_phid = $author->getPHID();
     $project = id(new PhabricatorProject())
       ->setName($title)
-      ->setAuthorPHID($authorPHID);
+      ->setAuthorPHID($author_phid);
 
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_NAME,
+      PhabricatorProjectTransaction::TYPE_NAME,
       $title);
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_MEMBERS,
-      $this->loadMembersWithAuthor($authorPHID));
+      PhabricatorProjectTransaction::TYPE_MEMBERS,
+      $this->loadMembersWithAuthor($author_phid));
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_STATUS,
+      PhabricatorProjectTransaction::TYPE_STATUS,
       $this->generateProjectStatus());
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_CAN_VIEW,
+      PhabricatorTransactions::TYPE_VIEW_POLICY,
       PhabricatorPolicies::POLICY_PUBLIC);
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_CAN_EDIT,
+      PhabricatorTransactions::TYPE_EDIT_POLICY,
       PhabricatorPolicies::POLICY_PUBLIC);
     $this->addTransaction(
-      PhabricatorProjectTransactionType::TYPE_CAN_JOIN,
+      PhabricatorTransactions::TYPE_JOIN_POLICY,
       PhabricatorPolicies::POLICY_PUBLIC);
 
-    $editor = id(new PhabricatorProjectEditor($project))
+    $editor = id(new PhabricatorProjectTransactionEditor())
       ->setActor($author)
-      ->applyTransactions($this->xactions);
-
-    $profile = id(new PhabricatorProjectProfile())
-      ->setBlurb($this->generateDescription())
-      ->setProjectPHID($project->getPHID())
-      ->save();
+      ->setContentSource(PhabricatorContentSource::newConsoleSource())
+      ->applyTransactions($project, $this->xactions);
 
     return $project->save();
   }

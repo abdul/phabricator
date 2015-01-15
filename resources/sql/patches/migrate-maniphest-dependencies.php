@@ -8,18 +8,17 @@ foreach (new LiskMigrationIterator($table) as $task) {
   $id = $task->getID();
   echo "Task {$id}: ";
 
-  $deps = $task->getAttachedPHIDs(ManiphestPHIDTypeTask::TYPECONST);
+  $deps = $task->getAttachedPHIDs(ManiphestTaskPHIDType::TYPECONST);
   if (!$deps) {
     echo "-\n";
     continue;
   }
 
   $editor = new PhabricatorEdgeEditor();
-  $editor->setSuppressEvents(true);
   foreach ($deps as $dep) {
     $editor->addEdge(
       $task->getPHID(),
-      PhabricatorEdgeConfig::TYPE_TASK_DEPENDS_ON_TASK,
+      ManiphestTaskDependsOnTaskEdgeType::EDGECONST,
       $dep);
   }
   $editor->save();

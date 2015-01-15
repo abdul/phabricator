@@ -1,16 +1,22 @@
 <?php
 
-/**
- * @group legalpad
- */
 final class LegalpadDocumentEditor
   extends PhabricatorApplicationTransactionEditor {
 
   private $isContribution = false;
 
+  public function getEditorApplicationClass() {
+    return 'PhabricatorLegalpadApplication';
+  }
+
+  public function getEditorObjectsDescription() {
+    return pht('Legalpad Documents');
+  }
+
   private function setIsContribution($is_contribution) {
     $this->isContribution = $is_contribution;
   }
+
   private function isContribution() {
     return $this->isContribution;
   }
@@ -24,6 +30,9 @@ final class LegalpadDocumentEditor
 
     $types[] = LegalpadTransactionType::TYPE_TITLE;
     $types[] = LegalpadTransactionType::TYPE_TEXT;
+    $types[] = LegalpadTransactionType::TYPE_SIGNATURE_TYPE;
+    $types[] = LegalpadTransactionType::TYPE_PREAMBLE;
+
     return $types;
   }
 
@@ -36,6 +45,10 @@ final class LegalpadDocumentEditor
         return $object->getDocumentBody()->getTitle();
       case LegalpadTransactionType::TYPE_TEXT:
         return $object->getDocumentBody()->getText();
+      case LegalpadTransactionType::TYPE_SIGNATURE_TYPE:
+        return $object->getSignatureType();
+      case LegalpadTransactionType::TYPE_PREAMBLE:
+        return $object->getPreamble();
     }
   }
 
@@ -46,6 +59,8 @@ final class LegalpadDocumentEditor
     switch ($xaction->getTransactionType()) {
       case LegalpadTransactionType::TYPE_TITLE:
       case LegalpadTransactionType::TYPE_TEXT:
+      case LegalpadTransactionType::TYPE_SIGNATURE_TYPE:
+      case LegalpadTransactionType::TYPE_PREAMBLE:
         return $xaction->getNewValue();
     }
   }
@@ -65,6 +80,12 @@ final class LegalpadDocumentEditor
         $body = $object->getDocumentBody();
         $body->setText($xaction->getNewValue());
         $this->setIsContribution(true);
+        break;
+      case LegalpadTransactionType::TYPE_SIGNATURE_TYPE:
+        $object->setSignatureType($xaction->getNewValue());
+        break;
+      case LegalpadTransactionType::TYPE_PREAMBLE:
+        $object->setPreamble($xaction->getNewValue());
         break;
     }
   }
@@ -89,13 +110,12 @@ final class LegalpadDocumentEditor
       $object->setDocumentBodyPHID($body->getPHID());
 
       $actor = $this->getActor();
-      $type = PhabricatorEdgeConfig::TYPE_CONTRIBUTED_TO_OBJECT;
+      $type = PhabricatorContributedToObjectEdgeType::EDGECONST;
       id(new PhabricatorEdgeEditor())
         ->addEdge($actor->getPHID(), $type, $object->getPHID())
-        ->setActor($actor)
         ->save();
 
-      $type = PhabricatorEdgeConfig::TYPE_OBJECT_HAS_CONTRIBUTOR;
+      $type = PhabricatorObjectHasContributorEdgeType::EDGECONST;
       $contributors = PhabricatorEdgeQuery::loadDestinationPHIDs(
         $object->getPHID(),
         $type);
@@ -104,6 +124,8 @@ final class LegalpadDocumentEditor
 
       $object->save();
     }
+
+    return $xactions;
   }
 
   protected function mergeTransactions(
@@ -114,6 +136,8 @@ final class LegalpadDocumentEditor
     switch ($type) {
       case LegalpadTransactionType::TYPE_TITLE:
       case LegalpadTransactionType::TYPE_TEXT:
+      case LegalpadTransactionType::TYPE_SIGNATURE_TYPE:
+      case LegalpadTransactionType::TYPE_PREAMBLE:
         return $v;
     }
 
@@ -122,7 +146,9 @@ final class LegalpadDocumentEditor
 
 /* -(  Sending Mail  )------------------------------------------------------- */
 
-  protected function supportsMail() {
+  protected function shouldSendMail(
+    PhabricatorLiskDAO $object,
+    array $xactions) {
     return true;
   }
 
@@ -155,6 +181,7 @@ final class LegalpadDocumentEditor
     switch ($xaction->getTransactionType()) {
       case LegalpadTransactionType::TYPE_TEXT:
       case LegalpadTransactionType::TYPE_TITLE:
+      case LegalpadTransactionType::TYPE_PREAMBLE:
         return true;
     }
 
@@ -167,7 +194,7 @@ final class LegalpadDocumentEditor
 
     $body = parent::buildMailBody($object, $xactions);
 
-    $body->addTextSection(
+    $body->addLinkSection(
       pht('DOCUMENT DETAIL'),
       PhabricatorEnv::getProductionURI('/legalpad/view/'.$object->getID().'/'));
 
@@ -179,7 +206,9 @@ final class LegalpadDocumentEditor
   }
 
 
-  protected function supportsFeed() {
+  protected function shouldPublishFeedStory(
+    PhabricatorLiskDAO $object,
+    array $xactions) {
     return false;
   }
 

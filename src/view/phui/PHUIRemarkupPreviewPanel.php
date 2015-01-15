@@ -50,11 +50,11 @@ final class PHUIRemarkupPreviewPanel extends AphrontTagView {
     return $this;
   }
 
-  public function getTagName() {
+  protected function getTagName() {
     return 'div';
   }
 
-  public function getTagAttributes() {
+  protected function getTagAttributes() {
     $classes = array();
     $classes[] = 'phui-remarkup-preview';
 
@@ -69,10 +69,10 @@ final class PHUIRemarkupPreviewPanel extends AphrontTagView {
 
   protected function getTagContent() {
     if ($this->previewURI === null) {
-      throw new Exception("Call setPreviewURI() before rendering!");
+      throw new Exception('Call setPreviewURI() before rendering!');
     }
     if ($this->controlID === null) {
-      throw new Exception("Call setControlID() before rendering!");
+      throw new Exception('Call setControlID() before rendering!');
     }
 
     $preview_id = celerity_generate_unique_node_id();
@@ -116,7 +116,8 @@ final class PHUIRemarkupPreviewPanel extends AphrontTagView {
     switch ($this->skin) {
       case 'document':
         $content = id(new PHUIDocumentView())
-          ->appendChild($content);
+          ->appendChild($content)
+          ->setFontKit(PHUIDocumentView::FONT_SOURCE_SANS);
         break;
       default:
         $content = id(new PHUIBoxView())

@@ -1,32 +1,41 @@
 <?php
 
-/**
- * @group countdown
- */
 final class PhabricatorCountdown
   extends PhabricatorCountdownDAO
   implements PhabricatorPolicyInterface {
 
-  protected $id;
-  protected $phid;
   protected $title;
   protected $authorPHID;
   protected $epoch;
-  // protected $viewPolicy; //commented out till we have it on countdown table
+  protected $viewPolicy;
 
-  public function getConfiguration() {
+  public static function initializeNewCountdown(PhabricatorUser $actor) {
+    $app = id(new PhabricatorApplicationQuery())
+      ->setViewer($actor)
+      ->withClasses(array('PhabricatorCountdownApplication'))
+      ->executeOne();
+
+    $view_policy = $app->getPolicy(
+      PhabricatorCountdownDefaultViewCapability::CAPABILITY);
+
+    return id(new PhabricatorCountdown())
+      ->setAuthorPHID($actor->getPHID())
+      ->setViewPolicy($view_policy)
+      ->setEpoch(PhabricatorTime::getNow());
+  }
+
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'title' => 'text255',
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorCountdownPHIDTypeCountdown::TYPECONST);
-  }
-
-  public function getViewPolicy() {
-    return PhabricatorPolicies::POLICY_USER;
+      PhabricatorCountdownCountdownPHIDType::TYPECONST);
   }
 
 
@@ -51,6 +60,10 @@ final class PhabricatorCountdown
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     return ($viewer->getPHID() == $this->getAuthorPHID());
+  }
+
+  public function describeAutomaticCapability($capability) {
+    return pht('The author of a countdown can always view and edit it.');
   }
 
 }

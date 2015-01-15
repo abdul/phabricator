@@ -10,8 +10,7 @@ final class PhabricatorConduitLogQuery
     return $this;
   }
 
-
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhabricatorConduitMethodCallLog();
     $conn_r = $table->establishConnection('r');
 
@@ -38,6 +37,10 @@ final class PhabricatorConduitLogQuery
 
     $where[] = $this->buildPagingClause($conn_r);
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorConduitApplication';
   }
 
 }

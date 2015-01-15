@@ -1,14 +1,13 @@
 <?php
 
-/**
- * @group search
- */
 final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
   private $uri;
+  private $index;
   private $timeout;
 
-  public function __construct($uri) {
+  public function __construct($uri, $index) {
     $this->uri = $uri;
+    $this->index = $index;
   }
 
   public function setTimeout($timeout) {
@@ -53,16 +52,13 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
       );
     }
 
-    $this->executeRequest(
-      "/phabricator/{$type}/{$phid}/",
-      $spec,
-      $is_write = true);
+    $this->executeRequest("/{$type}/{$phid}/", $spec, 'PUT');
   }
 
   public function reconstructDocument($phid) {
     $type = phid_get_type($phid);
 
-    $response = $this->executeRequest("/phabricator/{$type}/{$phid}", array());
+    $response = $this->executeRequest("/{$type}/{$phid}", array());
 
     if (empty($response['exists'])) {
       return null;
@@ -94,14 +90,15 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
     return $doc;
   }
 
-  private function buildSpec(PhabricatorSearchQuery $query) {
+  private function buildSpec(PhabricatorSavedQuery $query) {
     $spec = array();
     $filter = array();
 
-    if ($query->getQuery() != '') {
+    if (strlen($query->getParameter('query'))) {
       $spec[] = array(
-        'field' => array(
-          'field.corpus' => $query->getQuery(),
+        'simple_query_string' => array(
+          'query'  => $query->getParameter('query'),
+          'fields' => array( 'field.corpus' ),
         ),
       );
     }
@@ -117,21 +114,45 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
       );
     }
 
-    $rel_mapping = array(
-      'author' => PhabricatorSearchRelationship::RELATIONSHIP_AUTHOR,
-      'open' => PhabricatorSearchRelationship::RELATIONSHIP_OPEN,
-      'owner' => PhabricatorSearchRelationship::RELATIONSHIP_OWNER,
-      'subscribers' => PhabricatorSearchRelationship::RELATIONSHIP_SUBSCRIBER,
-      'project' => PhabricatorSearchRelationship::RELATIONSHIP_PROJECT,
-      'repository' => PhabricatorSearchRelationship::RELATIONSHIP_REPOSITORY,
+    $relationship_map = array(
+      PhabricatorSearchRelationship::RELATIONSHIP_AUTHOR =>
+        $query->getParameter('authorPHIDs', array()),
+      PhabricatorSearchRelationship::RELATIONSHIP_OWNER =>
+        $query->getParameter('ownerPHIDs', array()),
+      PhabricatorSearchRelationship::RELATIONSHIP_SUBSCRIBER =>
+        $query->getParameter('subscriberPHIDs', array()),
+      PhabricatorSearchRelationship::RELATIONSHIP_PROJECT =>
+        $query->getParameter('projectPHIDs', array()),
+      PhabricatorSearchRelationship::RELATIONSHIP_REPOSITORY =>
+        $query->getParameter('repositoryPHIDs', array()),
     );
-    foreach ($rel_mapping as $name => $field) {
-      $param = $query->getParameter($name);
-      if (is_array($param)) {
+
+    $statuses = $query->getParameter('statuses', array());
+    $statuses = array_fuse($statuses);
+
+    $rel_open = PhabricatorSearchRelationship::RELATIONSHIP_OPEN;
+    $rel_closed = PhabricatorSearchRelationship::RELATIONSHIP_CLOSED;
+    $rel_unowned = PhabricatorSearchRelationship::RELATIONSHIP_UNOWNED;
+
+    $include_open = !empty($statuses[$rel_open]);
+    $include_closed = !empty($statuses[$rel_closed]);
+
+    if ($include_open && !$include_closed) {
+      $relationship_map[$rel_open] = true;
+    } else if (!$include_open && $include_closed) {
+      $relationship_map[$rel_closed] = true;
+    }
+
+    if ($query->getParameter('withUnowned')) {
+      $relationship_map[$rel_unowned] = true;
+    }
+
+    foreach ($relationship_map as $field => $param) {
+      if (is_array($param) && $param) {
         $should = array();
         foreach ($param as $val) {
           $should[] = array(
-            'text' => array(
+            'match' => array(
               "relationship.{$field}.phid" => array(
                 'query' => $val,
                 'type' => 'phrase',
@@ -167,7 +188,7 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
       );
     }
 
-    if (!$query->getQuery()) {
+    if (!$query->getParameter('query')) {
       $spec['sort'] = array(
         array('dateCreated' => 'desc'),
       );
@@ -179,29 +200,32 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
     return $spec;
   }
 
-  public function executeSearch(PhabricatorSearchQuery $query) {
-    $type = $query->getParameter('type');
-    if ($type) {
-      $uri = "/phabricator/{$type}/_search";
-    } else {
-      // Don't use '/phabricator/_search' for the case that there is something
-      // else in the index (for example if 'phabricator' is only an alias to
-      // some bigger index).
-      $types = PhabricatorSearchAbstractDocument::getSupportedTypes();
-      $uri = '/phabricator/' . implode(',', array_keys($types)) . '/_search';
+  public function executeSearch(PhabricatorSavedQuery $query) {
+    $types = $query->getParameter('types');
+    if (!$types) {
+      $types = array_keys(
+        PhabricatorSearchApplicationSearchEngine::getIndexableDocumentTypes());
     }
+
+    // Don't use '/_search' for the case that there is something
+    // else in the index (for example if 'phabricator' is only an alias to
+    // some bigger index). Use '/$types/_search' instead.
+    $uri = '/'.implode(',', $types).'/_search';
 
     try {
       $response = $this->executeRequest($uri, $this->buildSpec($query));
-    } catch (HTTPFutureResponseStatusHTTP $ex) {
+    } catch (HTTPFutureHTTPResponseStatus $ex) {
       // elasticsearch probably uses Lucene query syntax:
       // http://lucene.apache.org/core/3_6_1/queryparsersyntax.html
       // Try literal search if operator search fails.
-      if (!$query->getQuery()) {
+      if (!strlen($query->getParameter('query'))) {
         throw $ex;
       }
       $query = clone $query;
-      $query->setQuery(addcslashes($query->getQuery(), '+-&|!(){}[]^"~*?:\\'));
+      $query->setParameter(
+        'query',
+        addcslashes(
+          $query->getParameter('query'), '+-&|!(){}[]^"~*?:\\'));
       $response = $this->executeRequest($uri, $this->buildSpec($query));
     }
 
@@ -209,28 +233,156 @@ final class PhabricatorSearchEngineElastic extends PhabricatorSearchEngine {
     return $phids;
   }
 
-  private function executeRequest($path, array $data, $is_write = false) {
+  public function indexExists() {
+    try {
+      return (bool)$this->executeRequest('/_status/', array());
+    } catch (HTTPFutureHTTPResponseStatus $e) {
+      if ($e->getStatusCode() == 404) {
+        return false;
+      }
+      throw $e;
+    }
+  }
+
+  private function getIndexConfiguration() {
+    $data = array();
+    $data['settings'] = array(
+      'index' => array(
+        'auto_expand_replicas' => '0-2',
+        'analysis' => array(
+          'filter' => array(
+            'trigrams_filter' => array(
+              'min_gram' => 3,
+              'type' => 'ngram',
+              'max_gram' => 3,
+            ),
+          ),
+          'analyzer' => array(
+            'custom_trigrams' => array(
+              'type' => 'custom',
+              'filter' => array(
+                'lowercase',
+                'kstem',
+                'trigrams_filter',
+              ),
+              'tokenizer' => 'standard',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    $types = array_keys(
+      PhabricatorSearchApplicationSearchEngine::getIndexableDocumentTypes());
+    foreach ($types as $type) {
+      // Use the custom trigram analyzer for the corpus of text
+      $data['mappings'][$type]['properties']['field']['properties']['corpus'] =
+        array( 'type' => 'string', 'analyzer' => 'custom_trigrams' );
+
+      // Ensure we have dateCreated since the default query requires it
+      $data['mappings'][$type]['properties']['dateCreated']['type'] = 'string';
+    }
+
+    return $data;
+  }
+
+  public function indexIsSane() {
+    if (!$this->indexExists()) {
+      return false;
+    }
+
+    $cur_mapping = $this->executeRequest('/_mapping/', array());
+    $cur_settings = $this->executeRequest('/_settings/', array());
+    $actual = array_merge($cur_settings[$this->index],
+      $cur_mapping[$this->index]);
+
+    return $this->check($actual, $this->getIndexConfiguration());
+  }
+
+  /**
+   * Recursively check if two Elasticsearch configuration arrays are equal
+   *
+   * @param $actual
+   * @param $required array
+   * @return bool
+   */
+  private function check($actual, $required) {
+    foreach ($required as $key => $value) {
+      if (!array_key_exists($key, $actual)) {
+        if ($key === '_all') {
+          // The _all field never comes back so we just have to assume it
+          // is set correctly.
+          continue;
+        }
+        return false;
+      }
+      if (is_array($value)) {
+        if (!is_array($actual[$key])) {
+          return false;
+        }
+        if (!$this->check($actual[$key], $value)) {
+          return false;
+        }
+        continue;
+      }
+
+      $actual[$key] = self::normalizeConfigValue($actual[$key]);
+      $value = self::normalizeConfigValue($value);
+      if ($actual[$key] != $value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Normalize a config value for comparison. Elasticsearch accepts all kinds
+   * of config values but it tends to throw back 'true' for true and 'false' for
+   * false so we normalize everything. Sometimes, oddly, it'll throw back false
+   * for false....
+   *
+   * @param mixed $value config value
+   * @return mixed value normalized
+   */
+  private static function normalizeConfigValue($value) {
+    if ($value === true) {
+      return 'true';
+    } else if ($value === false) {
+      return 'false';
+    }
+    return $value;
+  }
+
+  public function initIndex() {
+    if ($this->indexExists()) {
+      $this->executeRequest('/', array(), 'DELETE');
+    }
+    $data = $this->getIndexConfiguration();
+    $this->executeRequest('/', $data, 'PUT');
+  }
+
+  private function executeRequest($path, array $data, $method = 'GET') {
     $uri = new PhutilURI($this->uri);
+    $uri->setPath($this->index);
+    $uri->appendPath($path);
     $data = json_encode($data);
 
-    $uri->setPath($path);
-
     $future = new HTTPSFuture($uri, $data);
-    if ($is_write) {
-      $future->setMethod('PUT');
+    if ($method != 'GET') {
+      $future->setMethod($method);
     }
     if ($this->getTimeout()) {
       $future->setTimeout($this->getTimeout());
     }
     list($body) = $future->resolvex();
 
-    if ($is_write) {
+    if ($method != 'GET') {
       return null;
     }
 
     $body = json_decode($body, true);
     if (!is_array($body)) {
-      throw new Exception("elasticsearch server returned invalid JSON!");
+      throw new Exception('elasticsearch server returned invalid JSON!');
     }
 
     return $body;

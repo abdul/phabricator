@@ -3,6 +3,10 @@
 final class PhabricatorFeedSearchEngine
   extends PhabricatorApplicationSearchEngine {
 
+  public function getResultTypeDescription() {
+    return pht('Feed Stories');
+  }
+
   public function buildSavedQueryFromRequest(AphrontRequest $request) {
     $saved = new PhabricatorSavedQuery();
 
@@ -66,25 +70,24 @@ final class PhabricatorFeedSearchEngine
       ->setViewer($this->requireViewer())
       ->withPHIDs($phids)
       ->execute();
-    $tokens = mpull($handles, 'getFullName', 'getPHID');
-    $user_tokens = array_select_keys($tokens, $user_phids);
-    $proj_tokens = array_select_keys($tokens, $proj_phids);
+    $user_handles = array_select_keys($handles, $user_phids);
+    $proj_handles = array_select_keys($handles, $proj_phids);
 
     $viewer_projects = $saved_query->getParameter('viewerProjects');
 
     $form
       ->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/users/')
+          ->setDatasource(new PhabricatorPeopleDatasource())
           ->setName('users')
           ->setLabel(pht('Include Users'))
-          ->setValue($user_tokens))
+          ->setValue($user_handles))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/projects/')
+          ->setDatasource(new PhabricatorProjectDatasource())
           ->setName('projectPHIDs')
           ->setLabel(pht('Include Projects'))
-          ->setValue($proj_tokens))
+          ->setValue($proj_handles))
       ->appendChild(
         id(new AphrontFormCheckboxControl())
           ->addCheckbox(
@@ -98,7 +101,7 @@ final class PhabricatorFeedSearchEngine
     return '/feed/'.$path;
   }
 
-  public function getBuiltinQueryNames() {
+  protected function getBuiltinQueryNames() {
     $names = array(
       'all' => pht('All Stories'),
     );
@@ -123,6 +126,25 @@ final class PhabricatorFeedSearchEngine
     }
 
     return parent::buildSavedQueryFromBuiltin($query_key);
+  }
+
+  protected function renderResultList(
+    array $objects,
+    PhabricatorSavedQuery $query,
+    array $handles) {
+
+    $builder = new PhabricatorFeedBuilder($objects);
+
+    if ($this->isPanelContext()) {
+      $builder->setShowHovercards(false);
+    } else {
+      $builder->setShowHovercards(true);
+    }
+
+    $builder->setUser($this->requireViewer());
+    $view = $builder->buildView();
+
+    return phutil_tag_div('phabricator-feed-frame', $view);
   }
 
 }

@@ -2,18 +2,14 @@
 
 abstract class DifferentialController extends PhabricatorController {
 
-  protected function allowsAnonymousAccess() {
-    return PhabricatorEnv::getEnvConfig('differential.anonymous-access');
-  }
-
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setHref($this->getApplicationURI('/diff/create/'))
         ->setName(pht('Create Diff'))
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }
@@ -33,7 +29,7 @@ abstract class DifferentialController extends PhabricatorController {
     return $nav;
   }
 
-  public function buildApplicationMenu() {
+  protected function buildApplicationMenu() {
     return $this->buildSideNavView(true)->getMenu();
   }
 

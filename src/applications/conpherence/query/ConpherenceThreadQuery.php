@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceThreadQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -129,12 +126,20 @@ final class ConpherenceThreadQuery
     $participants = id(new ConpherenceParticipant())
       ->loadAllWhere('conpherencePHID IN (%Ls)', array_keys($conpherences));
     $map = mgroup($participants, 'getConpherencePHID');
-    foreach ($map as $conpherence_phid => $conpherence_participants) {
-      $current_conpherence = $conpherences[$conpherence_phid];
+
+    foreach ($conpherences as $current_conpherence) {
+      $conpherence_phid = $current_conpherence->getPHID();
+
+      $conpherence_participants = idx(
+        $map,
+        $conpherence_phid,
+        array());
+
       $conpherence_participants = mpull(
         $conpherence_participants,
         null,
         'getParticipantPHID');
+
       $current_conpherence->attachParticipants($conpherence_participants);
       $current_conpherence->attachHandles(array());
     }
@@ -183,19 +188,19 @@ final class ConpherenceThreadQuery
     $transactions = $query->execute();
     $transactions = mgroup($transactions, 'getObjectPHID');
     foreach ($conpherences as $phid => $conpherence) {
-      $current_transactions = $transactions[$phid];
+      $current_transactions = idx($transactions, $phid, array());
       $handles = array();
       foreach ($current_transactions as $transaction) {
         $handles += $transaction->getHandles();
       }
       $conpherence->attachHandles($conpherence->getHandles() + $handles);
-      $conpherence->attachTransactions($transactions[$phid]);
+      $conpherence->attachTransactions($current_transactions);
     }
     return $this;
   }
 
   private function loadFilePHIDs(array $conpherences) {
-    $edge_type = PhabricatorEdgeConfig::TYPE_OBJECT_HAS_FILE;
+    $edge_type = PhabricatorObjectHasFileEdgeType::EDGECONST;
     $file_edges = id(new PhabricatorEdgeQuery())
       ->withSourcePHIDs(array_keys($conpherences))
       ->withEdgeTypes(array($edge_type))
@@ -217,16 +222,16 @@ final class ConpherenceThreadQuery
     $participant_phids = array_mergev($participant_phids);
     $file_phids = array_mergev($file_phids);
 
-    $epochs = ConpherenceTimeUtil::getCalendarEventEpochs(
+    $epochs = CalendarTimeUtil::getCalendarEventEpochs(
       $this->getViewer());
     $start_epoch = $epochs['start_epoch'];
     $end_epoch = $epochs['end_epoch'];
-    $statuses = id(new PhabricatorUserStatus())
-      ->loadAllWhere(
-        'userPHID in (%Ls) AND dateTo >= %d AND dateFrom <= %d',
-        $participant_phids,
-        $start_epoch,
-        $end_epoch);
+    $statuses = id(new PhabricatorCalendarEventQuery())
+      ->setViewer($this->getViewer())
+      ->withInvitedPHIDs($participant_phids)
+      ->withDateRange($start_epoch, $end_epoch)
+      ->execute();
+
     $statuses = mgroup($statuses, 'getUserPHID');
 
     // attached files
@@ -274,12 +279,16 @@ final class ConpherenceThreadQuery
       $widget_data = array(
         'statuses' => $statuses,
         'files' => $conpherence_files,
-        'files_authors' => $files_authors
+        'files_authors' => $files_authors,
       );
       $conpherence->attachWidgetData($widget_data);
     }
 
     return $this;
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorConpherenceApplication';
   }
 
 }

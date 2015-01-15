@@ -1,12 +1,9 @@
 <?php
 
-/**
- * @group herald
- */
-final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
+final class HeraldDifferentialRevisionAdapter
+  extends HeraldDifferentialAdapter {
 
   protected $revision;
-  protected $diff;
 
   protected $explicitCCs;
   protected $explicitReviewers;
@@ -15,14 +12,25 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
   protected $newCCs = array();
   protected $remCCs = array();
   protected $emailPHIDs = array();
+  protected $addReviewerPHIDs = array();
+  protected $blockingReviewerPHIDs = array();
+  protected $buildPlans = array();
+  protected $requiredSignatureDocumentPHIDs = array();
 
-  protected $repository;
   protected $affectedPackages;
   protected $changesets;
+  private $haveHunks;
 
-  public function isEnabled() {
-    $app = 'PhabricatorApplicationDifferential';
-    return PhabricatorApplication::isClassInstalled($app);
+  public function getAdapterApplicationClass() {
+    return 'PhabricatorDifferentialApplication';
+  }
+
+  public function getObject() {
+    return $this->revision;
+  }
+
+  public function getDiff() {
+    return $this->diff;
   }
 
   public function getAdapterContentType() {
@@ -33,20 +41,45 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return pht('Differential Revisions');
   }
 
+  public function getAdapterContentDescription() {
+    return pht(
+      "React to revisions being created or updated.\n".
+      "Revision rules can send email, flag revisions, add reviewers, ".
+      "and run build plans.");
+  }
+
+  public function supportsRuleType($rule_type) {
+    switch ($rule_type) {
+      case HeraldRuleTypeConfig::RULE_TYPE_GLOBAL:
+      case HeraldRuleTypeConfig::RULE_TYPE_PERSONAL:
+        return true;
+      case HeraldRuleTypeConfig::RULE_TYPE_OBJECT:
+      default:
+        return false;
+    }
+  }
+
   public function getFields() {
-    return array(
-      self::FIELD_TITLE,
-      self::FIELD_BODY,
-      self::FIELD_AUTHOR,
-      self::FIELD_REVIEWERS,
-      self::FIELD_CC,
-      self::FIELD_REPOSITORY,
-      self::FIELD_DIFF_FILE,
-      self::FIELD_DIFF_CONTENT,
-      self::FIELD_RULE,
-      self::FIELD_AFFECTED_PACKAGE,
-      self::FIELD_AFFECTED_PACKAGE_OWNER,
-    );
+    return array_merge(
+      array(
+        self::FIELD_TITLE,
+        self::FIELD_BODY,
+        self::FIELD_AUTHOR,
+        self::FIELD_AUTHOR_PROJECTS,
+        self::FIELD_REVIEWERS,
+        self::FIELD_CC,
+        self::FIELD_REPOSITORY,
+        self::FIELD_REPOSITORY_PROJECTS,
+        self::FIELD_DIFF_FILE,
+        self::FIELD_DIFF_CONTENT,
+        self::FIELD_DIFF_ADDED_CONTENT,
+        self::FIELD_DIFF_REMOVED_CONTENT,
+        self::FIELD_AFFECTED_PACKAGE,
+        self::FIELD_AFFECTED_PACKAGE_OWNER,
+        self::FIELD_IS_NEW_OBJECT,
+        self::FIELD_ARCANIST_PROJECT,
+      ),
+      parent::getFields());
   }
 
   public function getRepetitionOptions() {
@@ -59,10 +92,16 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
   public static function newLegacyAdapter(
     DifferentialRevision $revision,
     DifferentialDiff $diff) {
-
     $object = new HeraldDifferentialRevisionAdapter();
 
-    $revision->loadRelationships();
+    // Reload the revision to pick up relationship information.
+    $revision = id(new DifferentialRevisionQuery())
+      ->withIDs(array($revision->getID()))
+      ->setViewer(PhabricatorUser::getOmnipotentUser())
+      ->needRelationships(true)
+      ->needReviewerStatus(true)
+      ->executeOne();
+
     $object->revision = $revision;
     $object->diff = $diff;
 
@@ -96,39 +135,28 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return $this->emailPHIDs;
   }
 
+  public function getReviewersAddedByHerald() {
+    return $this->addReviewerPHIDs;
+  }
+
+  public function getBlockingReviewersAddedByHerald() {
+    return $this->blockingReviewerPHIDs;
+  }
+
+  public function getRequiredSignatureDocumentPHIDs() {
+    return $this->requiredSignatureDocumentPHIDs;
+  }
+
+  public function getBuildPlans() {
+    return $this->buildPlans;
+  }
+
   public function getPHID() {
     return $this->revision->getPHID();
   }
 
   public function getHeraldName() {
     return $this->revision->getTitle();
-  }
-
-  public function loadRepository() {
-    if ($this->repository === null) {
-      $diff = $this->diff;
-
-      $repository = false;
-
-      if ($diff->getRepositoryUUID()) {
-        $repository = id(new PhabricatorRepository())->loadOneWhere(
-          'uuid = %s',
-          $diff->getRepositoryUUID());
-      }
-
-      if (!$repository && $diff->getArcanistProjectPHID()) {
-        $project = id(new PhabricatorRepositoryArcanistProject())->loadOneWhere(
-          'phid = %s',
-          $diff->getArcanistProjectPHID());
-        if ($project && $project->getRepositoryID()) {
-          $repository = id(new PhabricatorRepository())->load(
-            $project->getRepositoryID());
-        }
-      }
-
-      $this->repository = $repository;
-    }
-    return $this->repository;
   }
 
   protected function loadChangesets() {
@@ -138,52 +166,20 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
     return $this->changesets;
   }
 
-  protected function loadAffectedPaths() {
+  protected function loadChangesetsWithHunks() {
     $changesets = $this->loadChangesets();
 
-    $paths = array();
-    foreach ($changesets as $changeset) {
-      $paths[] = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-    }
-    return $paths;
-  }
+    if ($changesets && !$this->haveHunks) {
+      $this->haveHunks = true;
 
-  protected function getAbsoluteRepositoryPathForChangeset(
-    DifferentialChangeset $changeset) {
-
-    $repository = $this->loadRepository();
-    if (!$repository) {
-      return '/'.ltrim($changeset->getFilename(), '/');
+      id(new DifferentialHunkQuery())
+        ->setViewer(PhabricatorUser::getOmnipotentUser())
+        ->withChangesets($changesets)
+        ->needAttachToChangesets(true)
+        ->execute();
     }
 
-    $diff = $this->diff;
-
-    return $changeset->getAbsoluteRepositoryPath($repository, $diff);
-  }
-
-  protected function loadContentDictionary() {
-    $changesets = $this->loadChangesets();
-
-    $hunks = array();
-    if ($changesets) {
-      $hunks = id(new DifferentialHunk())->loadAllWhere(
-        'changesetID in (%Ld)',
-        mpull($changesets, 'getID'));
-    }
-
-    $dict = array();
-    $hunks = mgroup($hunks, 'getChangesetID');
-    $changesets = mpull($changesets, null, 'getID');
-    foreach ($changesets as $id => $changeset) {
-      $path = $this->getAbsoluteRepositoryPathForChangeset($changeset);
-      $content = array();
-      foreach (idx($hunks, $id, array()) as $hunk) {
-        $content[] = $hunk->makeChanges();
-      }
-      $dict[$path] = implode("\n", $content);
-    }
-
-    return $dict;
+    return $changesets;
   }
 
   public function loadAffectedPackages() {
@@ -213,6 +209,18 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
       case self::FIELD_AUTHOR:
         return $this->revision->getAuthorPHID();
         break;
+      case self::FIELD_AUTHOR_PROJECTS:
+        $author_phid = $this->revision->getAuthorPHID();
+        if (!$author_phid) {
+          return array();
+        }
+
+        $projects = id(new PhabricatorProjectQuery())
+          ->setViewer(PhabricatorUser::getOmnipotentUser())
+          ->withMemberPHIDs(array($author_phid))
+          ->execute();
+
+        return mpull($projects, 'getPHID');
       case self::FIELD_DIFF_FILE:
         return $this->loadAffectedPaths();
       case self::FIELD_CC:
@@ -233,8 +241,18 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
           return null;
         }
         return $repository->getPHID();
+      case self::FIELD_REPOSITORY_PROJECTS:
+        $repository = $this->loadRepository();
+        if (!$repository) {
+          return array();
+        }
+        return $repository->getProjectPHIDs();
       case self::FIELD_DIFF_CONTENT:
         return $this->loadContentDictionary();
+      case self::FIELD_DIFF_ADDED_CONTENT:
+        return $this->loadAddedContentDictionary();
+      case self::FIELD_DIFF_REMOVED_CONTENT:
+        return $this->loadRemovedContentDictionary();
       case self::FIELD_AFFECTED_PACKAGE:
         $packages = $this->loadAffectedPackages();
         return mpull($packages, 'getPHID');
@@ -242,6 +260,8 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
         $packages = $this->loadAffectedPackages();
         return PhabricatorOwnersOwner::loadAffiliatedUserPHIDs(
           mpull($packages, 'getID'));
+      case self::FIELD_ARCANIST_PROJECT:
+        return $this->revision->getArcanistProjectPHID();
     }
 
     return parent::getHeraldField($field);
@@ -250,20 +270,30 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
   public function getActions($rule_type) {
     switch ($rule_type) {
       case HeraldRuleTypeConfig::RULE_TYPE_GLOBAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_REMOVE_CC,
-          self::ACTION_EMAIL,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_REMOVE_CC,
+            self::ACTION_EMAIL,
+            self::ACTION_ADD_REVIEWERS,
+            self::ACTION_ADD_BLOCKING_REVIEWERS,
+            self::ACTION_APPLY_BUILD_PLANS,
+            self::ACTION_REQUIRE_SIGNATURE,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
       case HeraldRuleTypeConfig::RULE_TYPE_PERSONAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_REMOVE_CC,
-          self::ACTION_EMAIL,
-          self::ACTION_FLAG,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_REMOVE_CC,
+            self::ACTION_EMAIL,
+            self::ACTION_FLAG,
+            self::ACTION_ADD_REVIEWERS,
+            self::ACTION_ADD_BLOCKING_REVIEWERS,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
     }
   }
 
@@ -351,10 +381,57 @@ final class HeraldDifferentialRevisionAdapter extends HeraldAdapter {
             true,
             pht('Removed addresses from CC list.'));
           break;
+        case self::ACTION_ADD_REVIEWERS:
+          foreach ($effect->getTarget() as $phid) {
+            $this->addReviewerPHIDs[$phid] = true;
+          }
+          $result[] = new HeraldApplyTranscript(
+            $effect,
+            true,
+            pht('Added reviewers.'));
+          break;
+        case self::ACTION_ADD_BLOCKING_REVIEWERS:
+          // This adds reviewers normally, it just also marks them blocking.
+          foreach ($effect->getTarget() as $phid) {
+            $this->addReviewerPHIDs[$phid] = true;
+            $this->blockingReviewerPHIDs[$phid] = true;
+          }
+          $result[] = new HeraldApplyTranscript(
+            $effect,
+            true,
+            pht('Added blocking reviewers.'));
+          break;
+        case self::ACTION_APPLY_BUILD_PLANS:
+          foreach ($effect->getTarget() as $phid) {
+            $this->buildPlans[] = $phid;
+          }
+          $result[] = new HeraldApplyTranscript(
+            $effect,
+            true,
+            pht('Applied build plans.'));
+          break;
+        case self::ACTION_REQUIRE_SIGNATURE:
+          foreach ($effect->getTarget() as $phid) {
+            $this->requiredSignatureDocumentPHIDs[] = $phid;
+          }
+          $result[] = new HeraldApplyTranscript(
+            $effect,
+            true,
+            pht('Required signatures.'));
+          break;
         default:
-          throw new Exception("No rules to handle action '{$action}'.");
+          $custom_result = parent::handleCustomHeraldEffect($effect);
+          if ($custom_result === null) {
+            throw new Exception(pht(
+              "No rules to handle action '%s'.",
+              $action));
+          }
+
+          $result[] = $custom_result;
+          break;
       }
     }
     return $result;
   }
+
 }

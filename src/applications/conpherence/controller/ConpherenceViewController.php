@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceViewController extends
   ConpherenceController {
 
@@ -75,7 +72,7 @@ final class ConpherenceViewController extends
       $content = array(
         'header' => $header,
         'messages' => $messages,
-        'form' => $form
+        'form' => $form,
       );
     }
 
@@ -99,7 +96,7 @@ final class ConpherenceViewController extends
       $layout,
       array(
         'title' => $title,
-        'device' => true,
+        'pageObjects' => array($conpherence->getPHID()),
       ));
   }
 
@@ -117,8 +114,8 @@ final class ConpherenceViewController extends
           'sigil' => 'show-older-messages',
           'class' => 'conpherence-show-older-messages',
           'meta' => array(
-            'oldest_transaction_id' => $oldest_transaction_id
-          )
+            'oldest_transaction_id' => $oldest_transaction_id,
+          ),
         ),
         pht('Show Older Messages'));
     }
@@ -130,9 +127,12 @@ final class ConpherenceViewController extends
 
     $conpherence = $this->getConpherence();
     $user = $this->getRequest()->getUser();
+    $draft = PhabricatorDraft::newFromUserAndKey(
+      $user,
+      $conpherence->getPHID());
     $update_uri = $this->getApplicationURI('update/'.$conpherence->getID().'/');
 
-    Javelin::initBehavior('conpherence-pontificate');
+    $this->initBehavior('conpherence-pontificate');
 
     $form =
       id(new AphrontFormView())
@@ -144,10 +144,11 @@ final class ConpherenceViewController extends
       ->appendChild(
         id(new PhabricatorRemarkupControl())
         ->setUser($user)
-        ->setName('text'))
+        ->setName('text')
+        ->setValue($draft->getDraft()))
       ->appendChild(
         id(new AphrontFormSubmitControl())
-          ->setValue(pht('Pontificate')))
+          ->setValue(pht('Send Message')))
       ->appendChild(
         javelin_tag(
           'input',
@@ -155,7 +156,11 @@ final class ConpherenceViewController extends
             'type' => 'hidden',
             'name' => 'latest_transaction_id',
             'value' => $latest_transaction_id,
-            'sigil' => 'latest-transaction-id'
+            'sigil' => 'latest-transaction-id',
+            'meta' => array(
+              'threadPHID' => $conpherence->getPHID(),
+              'threadID' => $conpherence->getID(),
+            ),
           ),
           ''))
       ->render();

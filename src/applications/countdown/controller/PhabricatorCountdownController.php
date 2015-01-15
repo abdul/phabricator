@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group countdown
- */
 abstract class PhabricatorCountdownController extends PhabricatorController {
 
   public function buildSideNavView($for_app = false) {
@@ -24,19 +21,20 @@ abstract class PhabricatorCountdownController extends PhabricatorController {
     return $nav;
   }
 
-  public function buildApplicationMenu() {
+  protected function buildApplicationMenu() {
     return $this->buildSideNavView($for_app = true)->getMenu();
   }
 
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setName(pht('Create Countdown'))
         ->setHref($this->getApplicationURI('edit/'))
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }
+
 }

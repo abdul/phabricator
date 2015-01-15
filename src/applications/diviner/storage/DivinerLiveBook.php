@@ -3,16 +3,29 @@
 final class DivinerLiveBook extends DivinerDAO
   implements PhabricatorPolicyInterface {
 
-  protected $phid;
   protected $name;
   protected $viewPolicy;
   protected $configurationData = array();
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_SERIALIZATION => array(
         'configurationData' => self::SERIALIZATION_JSON,
+      ),
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'name' => 'text64',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'name' => array(
+          'columns' => array('name'),
+          'unique' => true,
+        ),
       ),
     ) + parent::getConfiguration();
   }
@@ -28,7 +41,7 @@ final class DivinerLiveBook extends DivinerDAO
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      DivinerPHIDTypeBook::TYPECONST);
+      DivinerBookPHIDType::TYPECONST);
   }
 
   public function getTitle() {
@@ -39,8 +52,12 @@ final class DivinerLiveBook extends DivinerDAO
     return $this->getConfig('short', $this->getTitle());
   }
 
+  public function getPreface() {
+    return $this->getConfig('preface');
+  }
+
   public function getGroupName($group) {
-    $groups = $this->getConfig('groups');
+    $groups = $this->getConfig('groups', array());
     $spec = idx($groups, $group, array());
     return idx($spec, 'name', $group);
   }
@@ -54,11 +71,15 @@ final class DivinerLiveBook extends DivinerDAO
   }
 
   public function getPolicy($capability) {
-    return $this->viewPolicy;
+    return PhabricatorPolicies::getMostOpenPolicy();
   }
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     return false;
+  }
+
+  public function describeAutomaticCapability($capability) {
+    return null;
   }
 
 }

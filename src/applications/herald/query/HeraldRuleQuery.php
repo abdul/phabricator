@@ -1,13 +1,14 @@
 <?php
 
-final class HeraldRuleQuery
-  extends PhabricatorCursorPagedPolicyAwareQuery {
+final class HeraldRuleQuery extends PhabricatorCursorPagedPolicyAwareQuery {
 
   private $ids;
   private $phids;
   private $authorPHIDs;
   private $ruleTypes;
   private $contentTypes;
+  private $disabled;
+  private $triggerObjectPHIDs;
 
   private $needConditionsAndActions;
   private $needAppliedToPHIDs;
@@ -43,6 +44,16 @@ final class HeraldRuleQuery
     return $this;
   }
 
+  public function withDisabled($disabled) {
+    $this->disabled = $disabled;
+    return $this;
+  }
+
+  public function withTriggerObjectPHIDs(array $phids) {
+    $this->triggerObjectPHIDs = $phids;
+    return $this;
+  }
+
   public function needConditionsAndActions($need) {
     $this->needConditionsAndActions = $need;
     return $this;
@@ -58,7 +69,7 @@ final class HeraldRuleQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new HeraldRule();
     $conn_r = $table->establishConnection('r');
 
@@ -73,8 +84,19 @@ final class HeraldRuleQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $rules) {
+  protected function willFilterPage(array $rules) {
     $rule_ids = mpull($rules, 'getID');
+
+    // Filter out any rules that have invalid adapters, or have adapters the
+    // viewer isn't permitted to see or use (for example, Differential rules
+    // if the user can't use Differential or Differential is not installed).
+    $types = HeraldAdapter::getEnabledAdapterMap($this->getViewer());
+    foreach ($rules as $key => $rule) {
+      if (empty($types[$rule->getContentType()])) {
+        $this->didRejectResult($rule);
+        unset($rules[$key]);
+      }
+    }
 
     if ($this->needValidateAuthors) {
       $this->validateRuleAuthors($rules);
@@ -120,6 +142,35 @@ final class HeraldRuleQuery
       }
     }
 
+    $object_phids = array();
+    foreach ($rules as $rule) {
+      if ($rule->isObjectRule()) {
+        $object_phids[] = $rule->getTriggerObjectPHID();
+      }
+    }
+
+    if ($object_phids) {
+      $objects = id(new PhabricatorObjectQuery())
+        ->setParentQuery($this)
+        ->setViewer($this->getViewer())
+        ->withPHIDs($object_phids)
+        ->execute();
+      $objects = mpull($objects, null, 'getPHID');
+    } else {
+      $objects = array();
+    }
+
+    foreach ($rules as $key => $rule) {
+      if ($rule->isObjectRule()) {
+        $object = idx($objects, $rule->getTriggerObjectPHID());
+        if (!$object) {
+          unset($rules[$key]);
+          continue;
+        }
+        $rule->attachTriggerObject($object);
+      }
+    }
+
     return $rules;
   }
 
@@ -161,16 +212,29 @@ final class HeraldRuleQuery
         $this->contentTypes);
     }
 
+    if ($this->disabled !== null) {
+      $where[] = qsprintf(
+        $conn_r,
+        'rule.isDisabled = %d',
+        (int)$this->disabled);
+    }
+
+    if ($this->triggerObjectPHIDs) {
+      $where[] = qsprintf(
+        $conn_r,
+        'rule.triggerObjectPHID IN (%Ls)',
+        $this->triggerObjectPHIDs);
+    }
+
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
   }
 
   private function validateRuleAuthors(array $rules) {
-
-    // "Global" rules always have valid authors.
+    // "Global" and "Object" rules always have valid authors.
     foreach ($rules as $key => $rule) {
-      if ($rule->isGlobalRule()) {
+      if ($rule->isGlobalRule() || $rule->isObjectRule()) {
         $rule->attachValidAuthor(true);
         unset($rules[$key]);
         continue;
@@ -195,13 +259,18 @@ final class HeraldRuleQuery
         $rule->attachValidAuthor(false);
         continue;
       }
-      if ($users[$author_phid]->getIsDisabled()) {
+      if (!$users[$author_phid]->isUserActivated()) {
         $rule->attachValidAuthor(false);
         continue;
       }
 
       $rule->attachValidAuthor(true);
+      $rule->attachAuthor($users[$author_phid]);
     }
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorHeraldApplication';
   }
 
 }

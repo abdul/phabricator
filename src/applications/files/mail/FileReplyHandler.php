@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group file
- */
 final class FileReplyHandler extends PhabricatorMailReplyHandler {
 
   public function validateMailReceiver($mail_receiver) {
@@ -32,8 +29,8 @@ final class FileReplyHandler extends PhabricatorMailReplyHandler {
     $actor = $this->getActor();
     $file = $this->getMailReceiver();
 
-    $body = $mail->getCleanTextBody();
-    $body = trim($body);
+    $body_data = $mail->parseBody();
+    $body = $body_data['body'];
     $body = $this->enhanceBodyWithAttachments($body, $mail->getAttachments());
 
     $content_source = PhabricatorContentSource::newForSource(
@@ -42,19 +39,8 @@ final class FileReplyHandler extends PhabricatorMailReplyHandler {
         'id' => $mail->getID(),
       ));
 
-    $lines = explode("\n", trim($body));
-    $first_line = head($lines);
-
     $xactions = array();
-    $command = null;
-    $matches = null;
-    if (preg_match('/^!(\w+)/', $first_line, $matches)) {
-      $lines = array_slice($lines, 1);
-      $body = implode("\n", $lines);
-      $body = trim($body);
-
-      $command = $matches[1];
-    }
+    $command = $body_data['body'];
 
     switch ($command) {
       case 'unsubscribe':
@@ -86,7 +72,6 @@ final class FileReplyHandler extends PhabricatorMailReplyHandler {
 
     $head_xaction = head($xactions);
     return $head_xaction->getID();
-
   }
 
 }

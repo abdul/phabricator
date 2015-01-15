@@ -26,6 +26,10 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
   private $edgeTypes;
   private $resultSet;
 
+  const ORDER_OLDEST_FIRST = 'order:oldest';
+  const ORDER_NEWEST_FIRST = 'order:newest';
+  private $order = self::ORDER_NEWEST_FIRST;
+
   private $needEdgeData;
 
 
@@ -70,6 +74,20 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
    */
   public function withEdgeTypes(array $types) {
     $this->edgeTypes = $types;
+    return $this;
+  }
+
+
+  /**
+   * Configure the order edge results are returned in.
+   *
+   * @param const Order constant.
+   * @return this
+   *
+   * @task config
+   */
+  public function setOrder($order) {
+    $this->order = $order;
     return $this;
   }
 
@@ -142,7 +160,7 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
   public function execute() {
     if (!$this->sourcePHIDs) {
       throw new Exception(
-      "You must use withSourcePHIDs() to query edges.");
+      'You must use withSourcePHIDs() to query edges.');
     }
 
     $sources = phid_group_by_type($this->sourcePHIDs);
@@ -150,8 +168,7 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
     $result = array();
 
     // When a query specifies types, make sure we return data for all queried
-    // types. This is mostly to make sure PhabricatorLiskDAO->attachEdges()
-    // gets some data, so that getEdges() doesn't throw later.
+    // types.
     if ($this->edgeTypes) {
       foreach ($this->sourcePHIDs as $phid) {
         foreach ($this->edgeTypes as $type) {
@@ -240,23 +257,24 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
     array $types = array()) {
     if ($this->resultSet === null) {
       throw new Exception(
-        "You must execute() a query before you you can getDestinationPHIDs().");
+        'You must execute() a query before you you can getDestinationPHIDs().');
     }
 
-    $src_phids = array_fill_keys($src_phids, true);
-    $types = array_fill_keys($types, true);
-
     $result_phids = array();
-    foreach ($this->resultSet as $src => $edges_by_type) {
-      if ($src_phids && empty($src_phids[$src])) {
-        continue;
+
+    $set = $this->resultSet;
+    if ($src_phids) {
+      $set = array_select_keys($set, $src_phids);
+    }
+
+    foreach ($set as $src => $edges_by_type) {
+      if ($types) {
+        $edges_by_type = array_select_keys($edges_by_type, $types);
       }
-      foreach ($edges_by_type as $type => $edges_by_dst) {
-        if ($types && empty($types[$type])) {
-          continue;
-        }
-        foreach ($edges_by_dst as $dst => $edge) {
-          $result_phids[$dst] = true;
+
+      foreach ($edges_by_type as $edges) {
+        foreach ($edges as $edge_phid => $edge) {
+          $result_phids[$edge_phid] = true;
         }
       }
     }
@@ -304,7 +322,11 @@ final class PhabricatorEdgeQuery extends PhabricatorQuery {
    * @task internal
    */
   private function buildOrderClause($conn_r) {
-    return 'ORDER BY edge.dateCreated DESC, edge.seq ASC';
+    if ($this->order == self::ORDER_NEWEST_FIRST) {
+      return 'ORDER BY edge.dateCreated DESC, edge.seq DESC';
+    } else {
+      return 'ORDER BY edge.dateCreated ASC, edge.seq ASC';
+    }
   }
 
 }

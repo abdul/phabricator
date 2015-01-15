@@ -29,8 +29,12 @@ final class PhabricatorPolicyAwareTestQuery
     }
   }
 
-  public function nextPage(array $page) {
+  protected function nextPage(array $page) {
     $this->offset += count($page);
+  }
+
+  public function getQueryApplicationClass() {
+    return null;
   }
 
 }

@@ -1,11 +1,24 @@
 <?php
 
-final class PHUIWorkpanelView extends AphrontView {
+final class PHUIWorkpanelView extends AphrontTagView {
 
   private $cards = array();
   private $header;
-  private $headerAction;
+  private $subheader = null;
   private $footerAction;
+  private $headerColor = PHUIActionHeaderView::HEADER_GREY;
+  private $headerActions = array();
+  private $headerTag;
+  private $headerIcon;
+
+  public function setHeaderIcon(PHUIIconView $header_icon) {
+    $this->headerIcon = $header_icon;
+    return $this;
+  }
+
+  public function getHeaderIcon() {
+    return $this->headerIcon;
+  }
 
   public function setCards(PHUIObjectItemListView $cards) {
     $this->cards[] = $cards;
@@ -17,8 +30,8 @@ final class PHUIWorkpanelView extends AphrontView {
     return $this;
   }
 
-  public function setHeaderAction($header_action) {
-    $this->headerAction = $header_action;
+  public function setSubheader($subheader) {
+    $this->subheader = $subheader;
     return $this;
   }
 
@@ -27,35 +40,73 @@ final class PHUIWorkpanelView extends AphrontView {
     return $this;
   }
 
-  public function render() {
+  public function setHeaderColor($header_color) {
+    $this->headerColor = $header_color;
+    return $this;
+  }
+
+  public function addHeaderAction(PHUIIconView $action) {
+    $this->headerActions[] = $action;
+    return $this;
+  }
+
+  public function setHeaderTag(PHUITagView $tag) {
+    $this->headerTag = $tag;
+    return $this;
+  }
+
+  protected function getTagAttributes() {
+    return array(
+      'class' => 'phui-workpanel-view',
+    );
+  }
+
+  protected function getTagContent() {
     require_celerity_resource('phui-workpanel-view-css');
 
+    $classes = array();
+    $classes[] = 'phui-workpanel-view-inner';
     $footer = '';
     if ($this->footerAction) {
       $footer_tag = $this->footerAction;
       $footer = phutil_tag(
         'ul',
           array(
-            'class' => 'phui-workpanel-footer-action mst ps'
+            'class' => 'phui-workpanel-footer-action mst ps',
           ),
           $footer_tag);
     }
 
-    $header = id(new PhabricatorActionHeaderView())
+    $header = id(new PHUIActionHeaderView())
       ->setHeaderTitle($this->header)
-      ->setHeaderColor(PhabricatorActionHeaderView::HEADER_GREY);
+      ->setHeaderSubtitle($this->subheader)
+      ->setHeaderColor($this->headerColor);
+
+    if ($this->headerIcon) {
+      $header->setHeaderIcon($this->headerIcon);
+    }
+
+    if ($this->headerTag) {
+      $header->setTag($this->headerTag);
+    }
+
+    foreach ($this->headerActions as $action) {
+      $header->addAction($action);
+    }
+
+    $classes[] = 'phui-workpanel-'.$this->headerColor;
 
     $body = phutil_tag(
       'div',
         array(
-          'class' => 'phui-workpanel-body'
+          'class' => 'phui-workpanel-body',
         ),
       $this->cards);
 
     $view = phutil_tag(
       'div',
       array(
-        'class' => 'phui-workpanel-view-inner',
+        'class' => implode(' ', $classes),
       ),
       array(
         $header,
@@ -63,11 +114,6 @@ final class PHUIWorkpanelView extends AphrontView {
         $footer,
       ));
 
-    return phutil_tag(
-      'div',
-        array(
-          'class' => 'phui-workpanel-view'
-        ),
-        $view);
+    return $view;
   }
 }

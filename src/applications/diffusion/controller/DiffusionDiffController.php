@@ -2,20 +2,30 @@
 
 final class DiffusionDiffController extends DiffusionController {
 
-  public function willProcessRequest(array $data) {
+  public function shouldAllowPublic() {
+    return true;
+  }
+
+  protected function shouldLoadDiffusionRequest() {
+    return false;
+  }
+
+  protected function processDiffusionRequest(AphrontRequest $request) {
+    $data = $request->getURIMap();
     $data = $data + array(
       'dblob' => $this->getRequest()->getStr('ref'),
     );
-    $drequest = DiffusionRequest::newFromAphrontRequestDictionary(
-      $data,
-      $this->getRequest());
+    try {
+      $drequest = DiffusionRequest::newFromAphrontRequestDictionary(
+        $data,
+        $request);
+    } catch (Exception $ex) {
+      return id(new Aphront404Response())
+        ->setRequest($request);
+    }
+    $this->setDiffusionRequest($drequest);
 
-    $this->diffusionRequest = $drequest;
-  }
-
-  public function processRequest() {
     $drequest = $this->getDiffusionRequest();
-    $request = $this->getRequest();
     $user = $request->getUser();
 
     if (!$request->isAjax()) {
@@ -46,10 +56,12 @@ final class DiffusionDiffController extends DiffusionController {
       'diffusion.diffquery',
       array(
         'commit' => $drequest->getCommit(),
-        'path' => $drequest->getPath()));
-    $drequest->setCommit($data['effectiveCommit']);
+        'path' => $drequest->getPath(),
+      ));
+    $drequest->updateSymbolicCommit($data['effectiveCommit']);
     $raw_changes = ArcanistDiffChange::newFromConduit($data['changes']);
-    $diff = DifferentialDiff::newFromRawChanges($raw_changes);
+    $diff = DifferentialDiff::newEphemeralFromRawChanges(
+      $raw_changes);
     $changesets = $diff->getChangesets();
     $changeset = reset($changesets);
 
@@ -62,7 +74,16 @@ final class DiffusionDiffController extends DiffusionController {
     $parser->setChangeset($changeset);
     $parser->setRenderingReference($drequest->generateURI(
       array(
-        'action' => 'rendering-ref')));
+        'action' => 'rendering-ref',
+      )));
+
+    $parser->setCharacterEncoding($request->getStr('encoding'));
+    $parser->setHighlightAs($request->getStr('highlight'));
+
+    $coverage = $drequest->loadCoverage();
+    if ($coverage) {
+      $parser->setCoverage($coverage);
+    }
 
     $pquery = new DiffusionPathIDQuery(array($changeset->getFilename()));
     $ids = $pquery->loadPathIDs();
@@ -74,12 +95,10 @@ final class DiffusionDiffController extends DiffusionController {
     $parser->setWhitespaceMode(
       DifferentialChangesetParser::WHITESPACE_SHOW_ALL);
 
-    $inlines = id(new PhabricatorAuditInlineComment())->loadAllWhere(
-      'commitPHID = %s AND pathID = %d AND
-        (authorPHID = %s OR auditCommentID IS NOT NULL)',
+    $inlines = PhabricatorAuditInlineComment::loadDraftAndPublishedComments(
+      $user,
       $drequest->loadCommit()->getPHID(),
-      $path_id,
-      $user->getPHID());
+      $path_id);
 
     if ($inlines) {
       foreach ($inlines as $inline) {

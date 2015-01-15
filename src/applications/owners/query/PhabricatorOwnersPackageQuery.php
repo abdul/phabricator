@@ -79,4 +79,8 @@ final class PhabricatorOwnersPackageQuery
     return $this->formatWhereClause($where);
   }
 
+  public function getQueryApplicationClass() {
+    return 'PhabricatorOwnersApplication';
+  }
+
 }

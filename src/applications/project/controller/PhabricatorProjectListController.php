@@ -1,8 +1,7 @@
 <?php
 
 final class PhabricatorProjectListController
-  extends PhabricatorProjectController
-  implements PhabricatorApplicationSearchResultsControllerInterface {
+  extends PhabricatorProjectController {
 
   private $queryKey;
 
@@ -15,8 +14,7 @@ final class PhabricatorProjectListController
   }
 
   public function processRequest() {
-    $request = $this->getRequest();
-    $controller = id(new PhabricatorApplicationSearchController($request))
+    $controller = id(new PhabricatorApplicationSearchController())
       ->setQueryKey($this->queryKey)
       ->setSearchEngine(new PhabricatorProjectSearchEngine())
       ->setNavigation($this->buildSideNavView());
@@ -24,31 +22,25 @@ final class PhabricatorProjectListController
     return $this->delegateToController($controller);
   }
 
-  public function renderResultsList(
-    array $projects,
-    PhabricatorSavedQuery $query) {
-    assert_instances_of($projects, 'PhabricatorProject');
-    $viewer = $this->getRequest()->getUser();
+  public function buildApplicationMenu() {
+    return $this->buildSideNavView(true)->getMenu();
+  }
 
-    $list = new PHUIObjectItemListView();
-    $list->setUser($viewer);
-    foreach ($projects as $project) {
-      $id = $project->getID();
+  protected function buildApplicationCrumbs() {
+    $crumbs = parent::buildApplicationCrumbs();
 
-      $item = id(new PHUIObjectItemView())
-        ->setHeader($project->getName())
-        ->setHref($this->getApplicationURI("view/{$id}/"));
+    $can_create = $this->hasApplicationCapability(
+      ProjectCreateProjectsCapability::CAPABILITY);
 
-      if ($project->getStatus() == PhabricatorProjectStatus::STATUS_ARCHIVED) {
-        $item->addIcon('delete-grey', pht('Archived'));
-        $item->setDisabled(true);
-      }
+    $crumbs->addAction(
+      id(new PHUIListItemView())
+        ->setName(pht('Create Project'))
+        ->setHref($this->getApplicationURI('create/'))
+        ->setIcon('fa-plus-square')
+        ->setWorkflow(!$can_create)
+        ->setDisabled(!$can_create));
 
-
-      $list->addItem($item);
-    }
-
-    return $list;
+    return $crumbs;
   }
 
 }

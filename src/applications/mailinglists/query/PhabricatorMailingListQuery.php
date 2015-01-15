@@ -5,6 +5,8 @@ final class PhabricatorMailingListQuery
 
   private $phids;
   private $ids;
+  private $emails;
+  private $names;
 
   public function withIDs($ids) {
     $this->ids = $ids;
@@ -16,7 +18,17 @@ final class PhabricatorMailingListQuery
     return $this;
   }
 
-  public function loadPage() {
+  public function withEmails(array $emails) {
+    $this->emails = $emails;
+    return $this;
+  }
+
+  public function withNames(array $names) {
+    $this->names = $names;
+    return $this;
+  }
+
+  protected function loadPage() {
     $table = new PhabricatorMetaMTAMailingList();
     $conn_r = $table->establishConnection('r');
 
@@ -48,9 +60,27 @@ final class PhabricatorMailingListQuery
         $this->phids);
     }
 
+    if ($this->names) {
+      $where[] = qsprintf(
+        $conn_r,
+        'name IN (%Ls)',
+        $this->names);
+    }
+
+    if ($this->emails) {
+      $where[] = qsprintf(
+        $conn_r,
+        'email IN (%Ls)',
+        $this->emails);
+    }
+
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorMailingListsApplication';
   }
 
 }

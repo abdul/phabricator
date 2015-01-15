@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group aphront
- */
 abstract class AphrontResponse {
 
   private $request;
@@ -49,6 +46,10 @@ abstract class AphrontResponse {
     return $this->responseCode;
   }
 
+  public function getHTTPResponseMessage() {
+    return '';
+  }
+
   public function setFrameable($frameable) {
     $this->frameable = $frameable;
     return $this;
@@ -90,7 +91,6 @@ abstract class AphrontResponse {
   }
 
   protected function addJSONShield($json_response) {
-
     // Add a shield to prevent "JSON Hijacking" attacks where an attacker
     // requests a JSON response using a normal <script /> tag and then uses
     // Object.prototype.__defineSetter__() or similar to read response data.
@@ -109,23 +109,28 @@ abstract class AphrontResponse {
     if ($this->cacheable) {
       $headers[] = array(
         'Expires',
-        $this->formatEpochTimestampForHTTPHeader(time() + $this->cacheable));
+        $this->formatEpochTimestampForHTTPHeader(time() + $this->cacheable),
+      );
     } else {
       $headers[] = array(
         'Cache-Control',
-        'private, no-cache, no-store, must-revalidate');
+        'private, no-cache, no-store, must-revalidate',
+      );
       $headers[] = array(
         'Pragma',
-        'no-cache');
+        'no-cache',
+      );
       $headers[] = array(
         'Expires',
-        'Sat, 01 Jan 2000 00:00:00 GMT');
+        'Sat, 01 Jan 2000 00:00:00 GMT',
+      );
     }
 
     if ($this->lastModified) {
       $headers[] = array(
         'Last-Modified',
-        $this->formatEpochTimestampForHTTPHeader($this->lastModified));
+        $this->formatEpochTimestampForHTTPHeader($this->lastModified),
+      );
     }
 
     // IE has a feature where it may override an explicit Content-Type

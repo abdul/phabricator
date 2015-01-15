@@ -1,14 +1,12 @@
 <?php
 
-/**
- * @group pholio
- */
 final class PholioMockQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
   private $ids;
   private $phids;
   private $authorPHIDs;
+  private $statuses;
 
   private $needCoverFiles;
   private $needImages;
@@ -27,6 +25,11 @@ final class PholioMockQuery
 
   public function withAuthorPHIDs(array $author_phids) {
     $this->authorPHIDs = $author_phids;
+    return $this;
+  }
+
+  public function withStatuses(array $statuses) {
+    $this->statuses = $statuses;
     return $this;
   }
 
@@ -65,7 +68,7 @@ final class PholioMockQuery
     $mocks = $table->loadAllFromArray($data);
 
     if ($mocks && $this->needImages) {
-      $this->loadImages($mocks);
+      self::loadImages($this->getViewer(), $mocks, $this->needInlineComments);
     }
 
     if ($mocks && $this->needCoverFiles) {
@@ -105,18 +108,28 @@ final class PholioMockQuery
         $this->authorPHIDs);
     }
 
+    if ($this->statuses) {
+      $where[] = qsprintf(
+        $conn_r,
+        'status IN (%Ls)',
+        $this->statuses);
+    }
+
     return $this->formatWhereClause($where);
   }
 
-  private function loadImages(array $mocks) {
+  public static function loadImages(
+    PhabricatorUser $viewer,
+    array $mocks,
+    $need_inline_comments) {
     assert_instances_of($mocks, 'PholioMock');
 
     $mock_map = mpull($mocks, null, 'getID');
     $all_images = id(new PholioImageQuery())
-      ->setViewer($this->getViewer())
+      ->setViewer($viewer)
       ->setMockCache($mock_map)
       ->withMockIDs(array_keys($mock_map))
-      ->needInlineComments($this->needInlineComments)
+      ->needInlineComments($need_inline_comments)
       ->execute();
 
     $image_groups = mgroup($all_images, 'getMockID');
@@ -132,9 +145,12 @@ final class PholioMockQuery
   private function loadCoverFiles(array $mocks) {
     assert_instances_of($mocks, 'PholioMock');
     $cover_file_phids = mpull($mocks, 'getCoverPHID');
-    $cover_files = mpull(id(new PhabricatorFile())->loadAllWhere(
-      'phid IN (%Ls)',
-      $cover_file_phids), null, 'getPHID');
+    $cover_files = id(new PhabricatorFileQuery())
+      ->setViewer($this->getViewer())
+      ->withPHIDs($cover_file_phids)
+      ->execute();
+
+    $cover_files = mpull($cover_files, null, 'getPHID');
 
     foreach ($mocks as $mock) {
       $file = idx($cover_files, $mock->getCoverPHID());
@@ -156,6 +172,10 @@ final class PholioMockQuery
     foreach ($mocks as $mock) {
       $mock->attachTokenCount(idx($counts, $mock->getPHID(), 0));
     }
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorPholioApplication';
   }
 
 }

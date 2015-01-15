@@ -1,84 +1,17 @@
 <?php
 
 /**
- * @group aphront
+ * NOTE: Do not extend this!
+ *
+ * @concrete-extensible
  */
 class AphrontDefaultApplicationConfiguration
   extends AphrontApplicationConfiguration {
 
-  public function __construct() {
-
-  }
+  public function __construct() {}
 
   public function getApplicationName() {
     return 'aphront-default';
-  }
-
-  public function getURIMap() {
-    return $this->getResourceURIMapRules() + array(
-      '/(?:(?P<filter>(?:jump))/)?' =>
-        'PhabricatorDirectoryMainController',
-
-      '/typeahead/' => array(
-        'common/(?P<type>\w+)/'
-          => 'PhabricatorTypeaheadCommonDatasourceController',
-      ),
-
-      '/oauthserver/' => array(
-        'auth/'          => 'PhabricatorOAuthServerAuthController',
-        'test/'          => 'PhabricatorOAuthServerTestController',
-        'token/'         => 'PhabricatorOAuthServerTokenController',
-        'clientauthorization/' => array(
-          '' => 'PhabricatorOAuthClientAuthorizationListController',
-          'delete/(?P<phid>[^/]+)/' =>
-            'PhabricatorOAuthClientAuthorizationDeleteController',
-          'edit/(?P<phid>[^/]+)/' =>
-            'PhabricatorOAuthClientAuthorizationEditController',
-        ),
-        'client/' => array(
-          ''                        => 'PhabricatorOAuthClientListController',
-          'create/'                 => 'PhabricatorOAuthClientEditController',
-          'delete/(?P<phid>[^/]+)/' => 'PhabricatorOAuthClientDeleteController',
-          'edit/(?P<phid>[^/]+)/'   => 'PhabricatorOAuthClientEditController',
-          'view/(?P<phid>[^/]+)/'   => 'PhabricatorOAuthClientViewController',
-        ),
-      ),
-
-      '/~/' => array(
-        '' => 'DarkConsoleController',
-        'data/(?P<key>[^/]+)/' => 'DarkConsoleDataController',
-      ),
-
-      '/status/' => 'PhabricatorStatusController',
-
-
-      '/help/' => array(
-        'keyboardshortcut/' => 'PhabricatorHelpKeyboardShortcutController',
-      ),
-
-      '/notification/' => array(
-        '(?:(?P<filter>all|unread)/)?'
-          => 'PhabricatorNotificationListController',
-        'panel/' => 'PhabricatorNotificationPanelController',
-        'individual/' => 'PhabricatorNotificationIndividualController',
-        'status/' => 'PhabricatorNotificationStatusController',
-        'clear/' => 'PhabricatorNotificationClearController',
-      ),
-
-      '/debug/' => 'PhabricatorDebugController',
-    );
-  }
-
-  protected function getResourceURIMapRules() {
-    return array(
-      '/res/' => array(
-        '(?:(?P<mtime>[0-9]+)T/)?'.
-        '(?P<package>pkg/)?'.
-        '(?P<hash>[a-f0-9]{8})/'.
-        '(?P<path>.+\.(?:css|js|jpg|png|swf|gif))'
-          => 'CelerityPhabricatorResourceController',
-      ),
-    );
   }
 
   /**
@@ -107,9 +40,12 @@ class AphrontDefaultApplicationConfiguration
 
     $data += $parser->parseQueryString(idx($_SERVER, 'QUERY_STRING', ''));
 
+    $cookie_prefix = PhabricatorEnv::getEnvConfig('phabricator.cookie-prefix');
+
     $request = new AphrontRequest($this->getHost(), $this->getPath());
     $request->setRequestData($data);
     $request->setApplicationConfiguration($this);
+    $request->setCookiePrefix($cookie_prefix);
 
     return $request;
   }
@@ -143,16 +79,72 @@ class AphrontDefaultApplicationConfiguration
       return $response;
     }
 
-    $is_serious = PhabricatorEnv::getEnvConfig('phabricator.serious-business');
-
     $user = $request->getUser();
     if (!$user) {
       // If we hit an exception very early, we won't have a user.
       $user = new PhabricatorUser();
     }
 
-    if ($ex instanceof PhabricatorPolicyException) {
+    if ($ex instanceof PhabricatorSystemActionRateLimitException) {
+      $dialog = id(new AphrontDialogView())
+        ->setTitle(pht('Slow Down!'))
+        ->setUser($user)
+        ->setErrors(array(pht('You are being rate limited.')))
+        ->appendParagraph($ex->getMessage())
+        ->appendParagraph($ex->getRateExplanation())
+        ->addCancelButton('/', pht('Okaaaaaaaaaaaaaay...'));
 
+      $response = new AphrontDialogResponse();
+      $response->setDialog($dialog);
+      return $response;
+    }
+
+    if ($ex instanceof PhabricatorAuthHighSecurityRequiredException) {
+
+      $form = id(new PhabricatorAuthSessionEngine())->renderHighSecurityForm(
+        $ex->getFactors(),
+        $ex->getFactorValidationResults(),
+        $user,
+        $request);
+
+      $dialog = id(new AphrontDialogView())
+        ->setUser($user)
+        ->setTitle(pht('Entering High Security'))
+        ->setShortTitle(pht('Security Checkpoint'))
+        ->setWidth(AphrontDialogView::WIDTH_FORM)
+        ->addHiddenInput(AphrontRequest::TYPE_HISEC, true)
+        ->setErrors(
+          array(
+            pht(
+              'You are taking an action which requires you to enter '.
+              'high security.'),
+          ))
+        ->appendParagraph(
+          pht(
+            'High security mode helps protect your account from security '.
+            'threats, like session theft or someone messing with your stuff '.
+            'while you\'re grabbing a coffee. To enter high security mode, '.
+            'confirm your credentials.'))
+        ->appendChild($form->buildLayoutView())
+        ->appendParagraph(
+          pht(
+            'Your account will remain in high security mode for a short '.
+            'period of time. When you are finished taking sensitive '.
+            'actions, you should leave high security.'))
+        ->setSubmitURI($request->getPath())
+        ->addCancelButton($ex->getCancelURI())
+        ->addSubmitButton(pht('Enter High Security'));
+
+      foreach ($request->getPassthroughRequestParameters() as $key => $value) {
+        $dialog->addHiddenInput($key, $value);
+      }
+
+      $response = new AphrontDialogResponse();
+      $response->setDialog($dialog);
+      return $response;
+    }
+
+    if ($ex instanceof PhabricatorPolicyException) {
       if (!$user->isLoggedIn()) {
         // If the user isn't logged in, just give them a login form. This is
         // probably a generally more useful response than a policy dialog that
@@ -160,28 +152,51 @@ class AphrontDefaultApplicationConfiguration
         //
         // Possibly we should add a header here like "you need to login to see
         // the thing you are trying to look at".
-        $login_controller = new PhabricatorAuthStartController($request);
-        return $login_controller->processRequest();
+        $login_controller = new PhabricatorAuthStartController();
+        $login_controller->setRequest($request);
+
+        $auth_app_class = 'PhabricatorAuthApplication';
+        $auth_app = PhabricatorApplication::getByClass($auth_app_class);
+        $login_controller->setCurrentApplication($auth_app);
+
+        return $login_controller->handleRequest($request);
       }
 
-      $content = hsprintf(
-        '<div class="aphront-policy-exception">%s</div>',
-        $ex->getMessage());
+      $list = $ex->getMoreInfo();
+      foreach ($list as $key => $item) {
+        $list[$key] = phutil_tag('li', array(), $item);
+      }
+      if ($list) {
+        $list = phutil_tag('ul', array(), $list);
+      }
+
+      $content = array(
+        phutil_tag(
+          'div',
+          array(
+            'class' => 'aphront-policy-rejection',
+          ),
+          $ex->getRejection()),
+        phutil_tag(
+          'div',
+          array(
+            'class' => 'aphront-capability-details',
+          ),
+          pht('Users with the "%s" capability:', $ex->getCapabilityName())),
+        $list,
+      );
 
       $dialog = new AphrontDialogView();
       $dialog
-        ->setTitle(
-            $is_serious
-              ? 'Access Denied'
-              : "You Shall Not Pass")
+        ->setTitle($ex->getTitle())
         ->setClass('aphront-access-dialog')
         ->setUser($user)
         ->appendChild($content);
 
       if ($this->getRequest()->isAjax()) {
-        $dialog->addCancelButton('/', 'Close');
+        $dialog->addCancelButton('/', pht('Close'));
       } else {
-        $dialog->addCancelButton('/', $is_serious ? 'OK' : 'Away With Thee');
+        $dialog->addCancelButton('/', pht('OK'));
       }
 
       $response = new AphrontDialogResponse();
@@ -200,10 +215,10 @@ class AphrontDefaultApplicationConfiguration
 
       $response = new AphrontWebpageResponse();
       $response->setContent($view->render());
+      $response->setHTTPResponseCode(500);
 
       return $response;
     }
-
 
     // Always log the unhandled exception.
     phlog($ex);
@@ -211,7 +226,7 @@ class AphrontDefaultApplicationConfiguration
     $class    = get_class($ex);
     $message  = $ex->getMessage();
 
-    if ($ex instanceof AphrontQuerySchemaException) {
+    if ($ex instanceof AphrontSchemaQueryException) {
       $message .=
         "\n\n".
         "NOTE: This usually indicates that the MySQL schema has not been ".
@@ -220,18 +235,20 @@ class AphrontDefaultApplicationConfiguration
     }
 
     if (PhabricatorEnv::getEnvConfig('phabricator.developer-mode')) {
-      $trace = $this->renderStackTrace($ex->getTrace(), $user);
+      $trace = id(new AphrontStackTraceView())
+        ->setUser($user)
+        ->setTrace($ex->getTrace());
     } else {
       $trace = null;
     }
 
-    $content = hsprintf(
-      '<div class="aphront-unhandled-exception">'.
-        '<div class="exception-message">%s</div>'.
-        '%s'.
-      '</div>',
-      $message,
-      $trace);
+    $content = phutil_tag(
+      'div',
+      array('class' => 'aphront-unhandled-exception'),
+      array(
+        phutil_tag('div', array('class' => 'exception-message'), $message),
+        $trace,
+      ));
 
     $dialog = new AphrontDialogView();
     $dialog
@@ -246,6 +263,7 @@ class AphrontDefaultApplicationConfiguration
 
     $response = new AphrontDialogResponse();
     $response->setDialog($dialog);
+    $response->setHTTPResponseCode(500);
 
     return $response;
   }
@@ -255,117 +273,17 @@ class AphrontDefaultApplicationConfiguration
   }
 
   public function build404Controller() {
-    return array(new Phabricator404Controller($this->getRequest()), array());
+    return array(new Phabricator404Controller(), array());
   }
 
-  public function buildRedirectController($uri) {
+  public function buildRedirectController($uri, $external) {
     return array(
-      new PhabricatorRedirectController($this->getRequest()),
+      new PhabricatorRedirectController(),
       array(
         'uri' => $uri,
-      ));
-  }
-
-  private function renderStackTrace($trace, PhabricatorUser $user) {
-
-    $libraries = PhutilBootloader::getInstance()->getAllLibraries();
-
-    // TODO: Make this configurable?
-    $path = 'https://secure.phabricator.com/diffusion/%s/browse/master/src/';
-
-    $callsigns = array(
-      'arcanist' => 'ARC',
-      'phutil' => 'PHU',
-      'phabricator' => 'P',
+        'external' => $external,
+      ),
     );
-
-    $rows = array();
-    $depth = count($trace);
-    foreach ($trace as $part) {
-      $lib = null;
-      $file = idx($part, 'file');
-      $relative = $file;
-      foreach ($libraries as $library) {
-        $root = phutil_get_library_root($library);
-        if (Filesystem::isDescendant($file, $root)) {
-          $lib = $library;
-          $relative = Filesystem::readablePath($file, $root);
-          break;
-        }
-      }
-
-      $where = '';
-      if (isset($part['class'])) {
-        $where .= $part['class'].'::';
-      }
-      if (isset($part['function'])) {
-        $where .= $part['function'].'()';
-      }
-
-      if ($file) {
-        if (isset($callsigns[$lib])) {
-          $attrs = array('title' => $file);
-          try {
-            $attrs['href'] = $user->loadEditorLink(
-              '/src/'.$relative,
-              $part['line'],
-              $callsigns[$lib]);
-          } catch (Exception $ex) {
-            // The database can be inaccessible.
-          }
-          if (empty($attrs['href'])) {
-            $attrs['href'] = sprintf($path, $callsigns[$lib]).
-              str_replace(DIRECTORY_SEPARATOR, '/', $relative).
-              '$'.$part['line'];
-            $attrs['target'] = '_blank';
-          }
-          $file_name = phutil_tag(
-            'a',
-            $attrs,
-            $relative);
-        } else {
-          $file_name = phutil_tag(
-            'span',
-            array(
-              'title' => $file,
-            ),
-            $relative);
-        }
-        $file_name = hsprintf('%s : %d', $file_name, $part['line']);
-      } else {
-        $file_name = phutil_tag('em', array(), '(Internal)');
-      }
-
-
-      $rows[] = array(
-        $depth--,
-        $lib,
-        $file_name,
-        $where,
-      );
-    }
-    $table = new AphrontTableView($rows);
-    $table->setHeaders(
-      array(
-        'Depth',
-        'Library',
-        'File',
-        'Where',
-      ));
-    $table->setColumnClasses(
-      array(
-        'n',
-        '',
-        '',
-        'wide',
-      ));
-
-    return hsprintf(
-      '<div class="exception-trace">'.
-        '<div class="exception-trace-header">Stack Trace</div>'.
-        '%s'.
-      '</div>',
-      $table->render());
   }
 
 }

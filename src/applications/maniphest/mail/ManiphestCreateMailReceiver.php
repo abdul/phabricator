@@ -3,7 +3,7 @@
 final class ManiphestCreateMailReceiver extends PhabricatorMailReceiver {
 
   public function isEnabled() {
-    $app_class = 'PhabricatorApplicationManiphest';
+    $app_class = 'PhabricatorManiphestApplication';
     return PhabricatorApplication::isClassInstalled($app_class);
   }
 
@@ -60,15 +60,12 @@ final class ManiphestCreateMailReceiver extends PhabricatorMailReceiver {
     PhabricatorMetaMTAReceivedMail $mail,
     PhabricatorUser $sender) {
 
-    $task = new ManiphestTask();
-
-    $task->setAuthorPHID($sender->getPHID());
+    $task = ManiphestTask::initializeNewTask($sender);
     $task->setOriginalEmailSource($mail->getHeader('From'));
-    $task->setPriority(ManiphestTaskPriority::PRIORITY_TRIAGE);
 
-    $editor = new ManiphestTransactionEditor();
-    $editor->setActor($sender);
-    $handler = $editor->buildReplyHandler($task);
+    $handler = PhabricatorEnv::newObjectFromConfig(
+      'metamta.maniphest.reply-handler');
+    $handler->setMailReceiver($task);
 
     $handler->setActor($sender);
     $handler->setExcludeMailRecipientPHIDs(

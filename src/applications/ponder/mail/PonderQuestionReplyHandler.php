@@ -4,7 +4,7 @@ final class PonderQuestionReplyHandler extends PhabricatorMailReplyHandler {
 
   public function validateMailReceiver($mail_receiver) {
     if (!($mail_receiver instanceof PonderQuestion)) {
-      throw new Exception("Mail receiver is not a PonderQuestion!");
+      throw new Exception('Mail receiver is not a PonderQuestion!');
     }
   }
 
@@ -15,11 +15,6 @@ final class PonderQuestionReplyHandler extends PhabricatorMailReplyHandler {
 
   public function getPublicReplyHandlerEmailAddress() {
     return $this->getDefaultPublicReplyHandlerEmailAddress('Q');
-  }
-
-  public function getReplyHandlerDomain() {
-    return PhabricatorEnv::getEnvConfig(
-      'metamta.maniphest.reply-handler-domain');
   }
 
   public function getReplyHandlerInstructions() {

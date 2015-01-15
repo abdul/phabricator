@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhameSkinSpecification {
 
   const TYPE_ADVANCED   = 'advanced';
@@ -16,7 +13,6 @@ final class PhameSkinSpecification {
   private $config;
 
   public static function loadAllSkinSpecifications() {
-
     static $specs;
 
     if ($specs === null) {
@@ -60,12 +56,32 @@ final class PhameSkinSpecification {
   }
 
   public static function loadOneSkinSpecification($name) {
+    // Only allow skins which we know to exist to load. This prevents loading
+    // skins like "../../secrets/evil/".
+    $all = self::loadAllSkinSpecifications();
+    if (empty($all[$name])) {
+      throw new Exception(
+        pht(
+          'Blog skin "%s" is not a valid skin!',
+          $name));
+    }
+
     $paths = PhabricatorEnv::getEnvConfig('phame.skins');
-    $base  = dirname(phutil_get_library_root('phabricator'));
+    $base = dirname(phutil_get_library_root('phabricator'));
     foreach ($paths as $path) {
       $path = Filesystem::resolvePath($path, $base);
       $skin_path = $path.DIRECTORY_SEPARATOR.$name;
       if (is_dir($skin_path)) {
+
+        // Double check that the skin really lives in the skin directory.
+        if (!Filesystem::isDescendant($skin_path, $path)) {
+          throw new Exception(
+            pht(
+              'Blog skin "%s" is not located in path "%s"!',
+              $name,
+              $path));
+        }
+
         $spec = self::loadSkinSpecification($skin_path);
         if ($spec) {
           $spec->setName($name);
@@ -76,7 +92,7 @@ final class PhameSkinSpecification {
     return null;
   }
 
-  public static function loadSkinSpecification($path) {
+  private static function loadSkinSpecification($path) {
 
     $config_path = $path.DIRECTORY_SEPARATOR.'skin.json';
     $config = array();
@@ -105,7 +121,7 @@ final class PhameSkinSpecification {
         $spec->addPhutilLibrary($path.DIRECTORY_SEPARATOR.'src');
         break;
       default:
-        throw new Exception("Unknown skin type!");
+        throw new Exception('Unknown skin type!');
     }
 
     $spec->setType($type);

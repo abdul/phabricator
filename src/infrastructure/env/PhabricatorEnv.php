@@ -108,12 +108,16 @@ final class PhabricatorEnv {
     }
     putenv('PATH='.$env_path);
 
+    // Write this back into $_ENV, too, so ExecFuture picks it up when creating
+    // subprocess environments.
+    $_ENV['PATH'] = $env_path;
+
     PhabricatorEventEngine::initialize();
 
     $translation = PhabricatorEnv::newObjectFromConfig('translation.provider');
     PhutilTranslator::getInstance()
       ->setLanguage($translation->getLanguage())
-      ->addTranslations($translation->getTranslations());
+      ->addTranslations($translation->getCleanTranslations());
   }
 
   private static function buildConfigurationSourceStack() {
@@ -135,7 +139,7 @@ final class PhabricatorEnv {
 
     $stack->pushSource(
       id(new PhabricatorConfigLocalSource())
-        ->setName(pht("Local Config")));
+        ->setName(pht('Local Config')));
 
     // If the install overrides the database adapter, we might need to load
     // the database adapter class before we can push on the database config.
@@ -149,10 +153,19 @@ final class PhabricatorEnv {
     // pull in all options from non-phabricator libraries now they are loaded.
     $default_source->loadExternalOptions();
 
+    // If this install has site config sources, load them now.
+    $site_sources = id(new PhutilSymbolLoader())
+      ->setAncestorClass('PhabricatorConfigSiteSource')
+      ->loadObjects();
+    $site_sources = msort($site_sources, 'getPriority');
+    foreach ($site_sources as $site_source) {
+      $stack->pushSource($site_source);
+    }
+
     try {
       $stack->pushSource(
         id(new PhabricatorConfigDatabaseSource('default'))
-          ->setName(pht("Database")));
+          ->setName(pht('Database')));
     } catch (AphrontQueryException $exception) {
       // If the database is not available, just skip this configuration
       // source. This happens during `bin/storage upgrade`, `bin/conf` before
@@ -163,7 +176,7 @@ final class PhabricatorEnv {
   public static function repairConfig($key, $value) {
     if (!self::$repairSource) {
       self::$repairSource = id(new PhabricatorConfigDictionarySource(array()))
-        ->setName(pht("Repaired Config"));
+        ->setName(pht('Repaired Config'));
       self::$sourceStack->pushSource(self::$repairSource);
     }
     self::$repairSource->setKeys(array($key => $value));
@@ -173,7 +186,7 @@ final class PhabricatorEnv {
   public static function overrideConfig($key, $value) {
     if (!self::$overrideSource) {
       self::$overrideSource = id(new PhabricatorConfigDictionarySource(array()))
-        ->setName(pht("Overridden Config"));
+        ->setName(pht('Overridden Config'));
       self::$sourceStack->pushSource(self::$overrideSource);
     }
     self::$overrideSource->setKeys(array($key => $value));
@@ -215,6 +228,20 @@ final class PhabricatorEnv {
     }
 
     return $env;
+  }
+
+  public static function calculateEnvironmentHash() {
+    $keys = array_keys(self::getAllConfigKeys());
+    sort($keys);
+
+    $skip_keys = self::getEnvConfig('phd.variant-config');
+    $keys = array_diff($keys, $skip_keys);
+
+    $values = array();
+    foreach ($keys as $key) {
+      $values[$key] = self::getEnvConfigIfExists($key);
+    }
+    return PhabricatorHash::digest(json_encode($values));
   }
 
 
@@ -332,8 +359,12 @@ final class PhabricatorEnv {
    *
    * @task read
    */
-  public static function getDoclink($resource) {
-    return 'http://www.phabricator.com/docs/phabricator/'.$resource;
+  public static function getDoclink($resource, $type = 'article') {
+    $uri = new PhutilURI('https://secure.phabricator.com/diviner/find/');
+    $uri->setQueryParam('name', $resource);
+    $uri->setQueryParam('type', $type);
+    $uri->setQueryParam('jump', true);
+    return (string)$uri;
   }
 
 
@@ -402,8 +433,8 @@ final class PhabricatorEnv {
     if ($stack_key !== $key) {
       self::$sourceStack->pushSource($source);
       throw new Exception(
-        "Scoped environments were destroyed in a diffent order than they ".
-        "were initialized.");
+        'Scoped environments were destroyed in a diffent order than they '.
+        'were initialized.');
     }
   }
 
@@ -454,6 +485,21 @@ final class PhabricatorEnv {
       return false;
     }
 
+    // Chrome (at a minimum) interprets backslashes in Location headers and the
+    // URL bar as forward slashes. This is probably intended to reduce user
+    // error caused by confusion over which key is "forward slash" vs "back
+    // slash".
+    //
+    // However, it means a URI like "/\evil.com" is interpreted like
+    // "//evil.com", which is a protocol relative remote URI.
+    //
+    // Since we currently never generate URIs with backslashes in them, reject
+    // these unconditionally rather than trying to figure out how browsers will
+    // interpret them.
+    if (preg_match('/\\\\/', $uri)) {
+      return false;
+    }
+
     // Valid URIs must begin with '/', followed by the end of the string or some
     // other non-'/' character. This rejects protocol-relative URIs like
     // "//evil.com/evil_stuff/".
@@ -485,6 +531,32 @@ final class PhabricatorEnv {
     return true;
   }
 
+  public static function isClusterRemoteAddress() {
+    $address = idx($_SERVER, 'REMOTE_ADDR');
+    if (!$address) {
+      throw new Exception(
+        pht(
+          'Unable to test remote address against cluster whitelist: '.
+          'REMOTE_ADDR is not defined.'));
+    }
+
+    return self::isClusterAddress($address);
+  }
+
+  public static function isClusterAddress($address) {
+    $cluster_addresses = PhabricatorEnv::getEnvConfig('cluster.addresses');
+    if (!$cluster_addresses) {
+      throw new Exception(
+        pht(
+          'Phabricator is not configured to serve cluster requests. '.
+          'Set `cluster.addresses` in the configuration to whitelist '.
+          'cluster hosts before sending requests that use a cluster '.
+          'authentication mechanism.'));
+    }
+
+    return PhutilCIDRList::newList($cluster_addresses)
+      ->containsAddress($address);
+  }
 
 /* -(  Internals  )---------------------------------------------------------- */
 
@@ -528,6 +600,8 @@ final class PhabricatorEnv {
     foreach ($tmp as $source) {
       self::$sourceStack->pushSource($source);
     }
+
+    self::dropConfigCache();
   }
 
   private static function dropConfigCache() {

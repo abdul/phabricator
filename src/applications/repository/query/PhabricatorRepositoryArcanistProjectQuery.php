@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group repository
- */
 final class PhabricatorRepositoryArcanistProjectQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -41,7 +38,7 @@ final class PhabricatorRepositoryArcanistProjectQuery
     return $table->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $projects) {
+  protected function willFilterPage(array $projects) {
     assert_instances_of($projects, 'PhabricatorRepositoryArcanistProject');
 
     if ($this->needRepositories) {
@@ -79,6 +76,12 @@ final class PhabricatorRepositoryArcanistProjectQuery
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+
+  public function getQueryApplicationClass() {
+    // TODO: Diffusion? Differential?
+    return null;
   }
 
 }

@@ -3,8 +3,16 @@
 final class PhabricatorConduitSearchEngine
   extends PhabricatorApplicationSearchEngine {
 
+  public function getResultTypeDescription() {
+    return pht('Conduit Methods');
+  }
+
+  protected function getApplicationClassName() {
+    return 'PhabricatorConduitApplication';
+  }
+
   public function getPageSize(PhabricatorSavedQuery $saved) {
-    return INF;
+    return PHP_INT_MAX - 1;
   }
 
   public function buildSavedQueryFromRequest(AphrontRequest $request) {
@@ -61,8 +69,9 @@ final class PhabricatorConduitSearchEngine
           ->setLabel('Applications')
           ->setName('applicationNames')
           ->setValue(implode(', ', $names))
-          ->setCaption(
-            pht('Example: %s', hsprintf('<tt>differential, paste</tt>'))));
+          ->setCaption(pht(
+            'Example: %s',
+            phutil_tag('tt', array(), 'differential, paste'))));
 
     $is_stable = $saved->getParameter('isStable');
     $is_unstable = $saved->getParameter('isUnstable');
@@ -97,25 +106,20 @@ final class PhabricatorConduitSearchEngine
                 'Show old methods which will be deleted in a future '.
                 'version of Phabricator.')),
             $is_deprecated));
-
-
   }
 
   protected function getURI($path) {
     return '/conduit/'.$path;
   }
 
-  public function getBuiltinQueryNames() {
-    $names = array(
+  protected function getBuiltinQueryNames() {
+    return array(
       'modern' => pht('Modern Methods'),
       'all'    => pht('All Methods'),
     );
-
-    return $names;
   }
 
   public function buildSavedQueryFromBuiltin($query_key) {
-
     $query = $this->newSavedQuery();
     $query->setQueryKey($query_key);
 
@@ -132,6 +136,65 @@ final class PhabricatorConduitSearchEngine
     }
 
     return parent::buildSavedQueryFromBuiltin($query_key);
+  }
+
+  protected function renderResultList(
+    array $methods,
+    PhabricatorSavedQuery $query,
+    array $handles) {
+    assert_instances_of($methods, 'ConduitAPIMethod');
+
+    $viewer = $this->requireViewer();
+
+    $out = array();
+
+    $last = null;
+    $list = null;
+    foreach ($methods as $method) {
+      $app = $method->getApplicationName();
+      if ($app !== $last) {
+        $last = $app;
+        if ($list) {
+          $out[] = $list;
+        }
+        $list = id(new PHUIObjectItemListView());
+
+        $app_object = $method->getApplication();
+        if ($app_object) {
+          $app_name = $app_object->getName();
+        } else {
+          $app_name = $app;
+        }
+      }
+
+      $method_name = $method->getAPIMethodName();
+
+      $item = id(new PHUIObjectItemView())
+        ->setHeader($method_name)
+        ->setHref($this->getApplicationURI('method/'.$method_name.'/'))
+        ->addAttribute($method->getMethodDescription());
+
+      switch ($method->getMethodStatus()) {
+        case ConduitAPIMethod::METHOD_STATUS_STABLE:
+          break;
+        case ConduitAPIMethod::METHOD_STATUS_UNSTABLE:
+          $item->addIcon('warning-grey', pht('Unstable'));
+          $item->setBarColor('yellow');
+          break;
+        case ConduitAPIMethod::METHOD_STATUS_DEPRECATED:
+          $item->addIcon('warning', pht('Deprecated'));
+          $item->setBarColor('red');
+          break;
+      }
+
+      $list->addItem($item);
+    }
+
+    if ($list) {
+      $out[] = $list;
+    }
+
+    return $out;
   }
 
 }

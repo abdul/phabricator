@@ -21,8 +21,10 @@ final class PhabricatorOwnersListController
 
     $repository_phid = '';
     if ($request->getStr('repository') != '') {
-      $repository_phid = id(new PhabricatorRepository())
-        ->loadOneWhere('callsign = %s', $request->getStr('repository'))
+      $repository_phid = id(new PhabricatorRepositoryQuery())
+        ->setViewer($user)
+        ->withCallsigns(array($request->getStr('repository')))
+        ->executeOne()
         ->getPHID();
     }
 
@@ -151,14 +153,14 @@ final class PhabricatorOwnersListController
       $phids = $request->getArr('owner');
       $phid = reset($phids);
       $handles = $this->loadViewerHandles(array($phid));
-      $owners_search_value = array(
-        $phid => $handles[$phid]->getFullName(),
-      );
+      $owners_search_value = array($handles[$phid]);
     }
 
     $callsigns = array('' => pht('(Any Repository)'));
-    $repositories = id(new PhabricatorRepository())
-      ->loadAllWhere('1 = 1 ORDER BY callsign');
+    $repositories = id(new PhabricatorRepositoryQuery())
+      ->setViewer($user)
+      ->setOrder(PhabricatorRepositoryQuery::ORDER_CALLSIGN)
+      ->execute();
     foreach ($repositories as $repository) {
       $callsigns[$repository->getCallsign()] =
         $repository->getCallsign().': '.$repository->getName();
@@ -175,7 +177,7 @@ final class PhabricatorOwnersListController
           ->setValue($request->getStr('name')))
       ->appendChild(
         id(new AphrontFormTokenizerControl())
-          ->setDatasource('/typeahead/common/usersorprojects/')
+          ->setDatasource(new PhabricatorProjectOrUserDatasource())
           ->setLimit(1)
           ->setName('owner')
           ->setLabel(pht('Owner'))
@@ -207,7 +209,6 @@ final class PhabricatorOwnersListController
       ),
       array(
         'title' => pht('Package Index'),
-        'device' => true,
       ));
   }
 
@@ -238,9 +239,10 @@ final class PhabricatorOwnersListController
       }
 
       if ($repository_phids) {
-        $repositories = id(new PhabricatorRepository())->loadAllWhere(
-          'phid in (%Ls)',
-          array_keys($repository_phids));
+        $repositories = id(new PhabricatorRepositoryQuery())
+          ->setViewer($this->getRequest()->getUser())
+          ->withPHIDs(array_keys($repository_phids))
+          ->execute();
       } else {
         $repositories = array();
       }
@@ -306,9 +308,9 @@ final class PhabricatorOwnersListController
         phutil_tag(
           'a',
           array(
-            'href' => '/audit/view/packagecommits/?phid='.$package->getPHID(),
+            'href' => '/audit/?auditorPHIDs='.$package->getPHID(),
           ),
-          pht('Related Commits'))
+          pht('Related Commits')),
       );
     }
 

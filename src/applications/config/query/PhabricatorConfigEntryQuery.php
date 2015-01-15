@@ -16,7 +16,7 @@ final class PhabricatorConfigEntryQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table = new PhabricatorConfigEntry();
     $conn_r = $table->establishConnection('r');
 
@@ -51,6 +51,10 @@ final class PhabricatorConfigEntryQuery
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorConfigApplication';
   }
 
 }

@@ -50,29 +50,24 @@ final class PhabricatorApplicationSearchController
 
     if (!$parent) {
       throw new Exception(
-        "You must delegate to this controller, not invoke it directly.");
+        'You must delegate to this controller, not invoke it directly.');
     }
 
     $engine = $this->getSearchEngine();
     if (!$engine) {
       throw new Exception(
-        "Call setEngine() before delegating to this controller!");
+        'Call setEngine() before delegating to this controller!');
     }
 
     $nav = $this->getNavigation();
     if (!$nav) {
       throw new Exception(
-        "Call setNavigation() before delegating to this controller!");
+        'Call setNavigation() before delegating to this controller!');
     }
 
     $engine->setViewer($this->getRequest()->getUser());
 
     $parent = $this->getDelegatingController();
-    $interface = 'PhabricatorApplicationSearchResultsControllerInterface';
-    if (!$parent instanceof $interface) {
-      throw new Exception(
-        "Delegating controller must implement '{$interface}'.");
-    }
   }
 
   public function processRequest() {
@@ -95,9 +90,9 @@ final class PhabricatorApplicationSearchController
 
     if ($request->isFormPost()) {
       $saved_query = $engine->buildSavedQueryFromRequest($request);
-      $this->saveQuery($saved_query);
+      $engine->saveQuery($saved_query);
       return id(new AphrontRedirectResponse())->setURI(
-        $engine->getQueryResultsPageURI($saved_query->getQueryKey()));
+        $engine->getQueryResultsPageURI($saved_query->getQueryKey()).'#R');
     }
 
     $named_query = null;
@@ -107,11 +102,24 @@ final class PhabricatorApplicationSearchController
       $run_query = false;
       $query_key = $request->getStr('query');
     } else if (!strlen($this->queryKey)) {
-      if ($request->isHTTPGet() && $request->getPassthroughRequestData()) {
+      $found_query_data = false;
+
+      if ($request->isHTTPGet()) {
         // If this is a GET request and it has some query data, don't
-        // do anything. We'll build and execute a query from it below.
-        // This allows external tools to build URIs like "/query/?users=a,b".
-      } else {
+        // do anything unless it's only before= or after=. We'll build and
+        // execute a query from it below. This allows external tools to build
+        // URIs like "/query/?users=a,b".
+        $pt_data = $request->getPassthroughRequestData();
+
+        foreach ($pt_data as $pt_key => $pt_value) {
+          if ($pt_key != 'before' && $pt_key != 'after') {
+            $found_query_data = true;
+            break;
+          }
+        }
+      }
+
+      if (!$found_query_data) {
         // Otherwise, there's no query data so just run the user's default
         // query for this application.
         $query_key = head_key($engine->loadEnabledNamedQueries());
@@ -134,6 +142,10 @@ final class PhabricatorApplicationSearchController
       $named_query = idx($engine->loadEnabledNamedQueries(), $query_key);
     } else {
       $saved_query = $engine->buildSavedQueryFromRequest($request);
+
+      // Save the query to generate a query key, so "Save Custom Query..." and
+      // other features like Maniphest's "Export..." work correctly.
+      $engine->saveQuery($saved_query);
     }
 
     $nav->selectFilter(
@@ -141,7 +153,8 @@ final class PhabricatorApplicationSearchController
       'query/advanced');
 
     $form = id(new AphrontFormView())
-      ->setUser($user);
+      ->setUser($user)
+      ->setAction($request->getPath());
 
     $engine->buildSearchForm($form, $saved_query);
 
@@ -161,6 +174,9 @@ final class PhabricatorApplicationSearchController
         '/search/edit/'.$saved_query->getQueryKey().'/',
         pht('Save Custom Query...'));
     }
+
+    // TODO: A "Create Dashboard Panel" action goes here somewhere once
+    // we sort out T5307.
 
     $form->appendChild($submit);
     $filter_view = id(new AphrontListFilterView())->appendChild($form);
@@ -190,24 +206,46 @@ final class PhabricatorApplicationSearchController
     $nav->appendChild($filter_view);
 
     if ($run_query) {
+      $nav->appendChild(
+        $anchor = id(new PhabricatorAnchorView())
+          ->setAnchorName('R'));
+
       $query = $engine->buildQueryFromSavedQuery($saved_query);
 
-      $pager = new AphrontCursorPagerView();
+      $pager = $engine->newPagerForSavedQuery($saved_query);
       $pager->readFromRequest($request);
-      $pager->setPageSize($engine->getPageSize($saved_query));
-      $objects = $query->setViewer($request->getUser())
-        ->executeWithCursorPager($pager);
 
-      $list = $parent->renderResultsList($objects, $saved_query);
+      $objects = $engine->executeQuery($query, $pager);
+
+      // TODO: To support Dashboard panels, rendering is moving into
+      // SearchEngines. Move it all the way in and then get rid of this.
+
+      $interface = 'PhabricatorApplicationSearchResultsControllerInterface';
+      if ($parent instanceof $interface) {
+        $list = $parent->renderResultsList($objects, $saved_query);
+      } else {
+        $engine->setRequest($request);
+
+        $list = $engine->renderResults(
+          $objects,
+          $saved_query);
+      }
 
       $nav->appendChild($list);
 
       // TODO: This is a bit hacky.
       if ($list instanceof PHUIObjectItemListView) {
-        $list->setNoDataString(pht("No results found for this query."));
+        $list->setNoDataString(pht('No results found for this query.'));
         $list->setPager($pager);
       } else {
-        $nav->appendChild($pager);
+        if ($pager->willShowPagingControls()) {
+          $pager_box = id(new PHUIBoxView())
+            ->addPadding(PHUI::PADDING_MEDIUM)
+            ->addMargin(PHUI::MARGIN_LARGE)
+            ->setBorder(true)
+            ->appendChild($pager);
+          $nav->appendChild($pager_box);
+        }
       }
     }
 
@@ -223,9 +261,7 @@ final class PhabricatorApplicationSearchController
 
     $crumbs = $parent
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht("Search")));
+      ->addTextCrumb($title);
 
     $nav->setCrumbs($crumbs);
 
@@ -233,7 +269,6 @@ final class PhabricatorApplicationSearchController
       $nav,
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 
@@ -268,9 +303,9 @@ final class PhabricatorApplicationSearchController
         ->setHref($engine->getQueryResultsPageURI($key));
 
       if ($named_query->getIsBuiltin() && $named_query->getIsDisabled()) {
-        $icon = 'new';
+        $icon = 'fa-plus';
       } else {
-        $icon = 'delete';
+        $icon = 'fa-times';
       }
 
       $item->addAction(
@@ -281,15 +316,15 @@ final class PhabricatorApplicationSearchController
 
       if ($named_query->getIsBuiltin()) {
         if ($named_query->getIsDisabled()) {
-          $item->addIcon('delete-grey', pht('Disabled'));
+          $item->addIcon('fa-times lightgreytext', pht('Disabled'));
           $item->setDisabled(true);
         } else {
-          $item->addIcon('lock-grey', pht('Builtin'));
+          $item->addIcon('fa-lock lightgreytext', pht('Builtin'));
         }
       } else {
         $item->addAction(
           id(new PHUIListItemView())
-            ->setIcon('edit')
+            ->setIcon('fa-pencil')
             ->setHref('/search/edit/'.$key.'/'));
       }
 
@@ -307,10 +342,7 @@ final class PhabricatorApplicationSearchController
 
     $crumbs = $parent
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht("Saved Queries"))
-          ->setHref($engine->getQueryManagementURI()));
+      ->addTextCrumb(pht('Saved Queries'), $engine->getQueryManagementURI());
 
     $nav->selectFilter('query/edit');
     $nav->setCrumbs($crumbs);
@@ -319,21 +351,8 @@ final class PhabricatorApplicationSearchController
     return $parent->buildApplicationPage(
       $nav,
       array(
-        'title' => pht("Saved Queries"),
-        'device' => true,
+        'title' => pht('Saved Queries'),
       ));
-  }
-
-  private function saveQuery(PhabricatorSavedQuery $query) {
-    $query->setEngineClassName(get_class($this->getSearchEngine()));
-
-    $unguarded = AphrontWriteGuard::beginScopedUnguardedWrites();
-    try {
-      $query->save();
-    } catch (AphrontQueryDuplicateKeyException $ex) {
-      // Ignore, this is just a repeated search.
-    }
-    unset($unguarded);
   }
 
   protected function buildApplicationMenu() {

@@ -5,8 +5,6 @@
  * Base class for Phabricator search engine providers. Each engine must offer
  * three capabilities: indexing, searching, and reconstruction (this can be
  * stubbed out if an engine can't reasonably do it, it is used for debugging).
- *
- * @group search
  */
 abstract class PhabricatorSearchEngine {
 
@@ -33,9 +31,31 @@ abstract class PhabricatorSearchEngine {
   /**
    * Execute a search query.
    *
-   * @param PhabricatorSearchQuery A query to execute.
+   * @param PhabricatorSavedQuery A query to execute.
    * @return list A list of matching PHIDs.
    */
-  abstract public function executeSearch(PhabricatorSearchQuery $query);
+  abstract public function executeSearch(PhabricatorSavedQuery $query);
 
+  /**
+   * Does the search index exist?
+   *
+   * @return bool
+   */
+  abstract public function indexExists();
+
+  /**
+   * Is the index in a usable state?
+   *
+   * @return bool
+   */
+  public function indexIsSane() {
+    return $this->indexExists();
+  }
+
+  /**
+   * Do any sort of setup for the search index
+   *
+   * @return void
+   */
+  public function initIndex() {}
 }

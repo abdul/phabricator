@@ -21,19 +21,20 @@ JX.behavior('global-drag-and-drop', function(config) {
   }
 
   var drop = new JX.PhabricatorDragAndDropFileUpload(document.documentElement)
-    .setURI(config.uploadURI);
+    .setURI(config.uploadURI)
+    .setViewPolicy(config.viewPolicy);
 
-  drop.listen('didBeginDrag', function(f) {
+  drop.listen('didBeginDrag', function() {
     JX.Mask.show();
     JX.DOM.show(JX.$(config.instructions));
   });
 
-  drop.listen('didEndDrag', function(f) {
+  drop.listen('didEndDrag', function() {
     JX.Mask.hide();
     JX.DOM.hide(JX.$(config.instructions));
   });
 
-  drop.listen('willUpload', function(f) {
+  drop.listen('willUpload', function() {
     pending++;
   });
 
@@ -58,11 +59,10 @@ JX.behavior('global-drag-and-drop', function(config) {
     }
   });
 
-  drop.listen('didError', function(f) {
+  drop.listen('didError', function() {
     pending--;
     errors = true;
   });
 
   drop.start();
 });
-

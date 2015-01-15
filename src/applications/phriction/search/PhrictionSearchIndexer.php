@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phriction
- */
 final class PhrictionSearchIndexer
   extends PhabricatorSearchDocumentIndexer {
 
@@ -20,7 +17,7 @@ final class PhrictionSearchIndexer
 
     $doc = new PhabricatorSearchAbstractDocument();
     $doc->setPHID($document->getPHID());
-    $doc->setDocumentType(PhrictionPHIDTypeDocument::TYPECONST);
+    $doc->setDocumentType(PhrictionDocumentPHIDType::TYPECONST);
     $doc->setDocumentTitle($content->getTitle());
 
     // TODO: This isn't precisely correct, denormalize into the Document table?
@@ -34,16 +31,16 @@ final class PhrictionSearchIndexer
     $doc->addRelationship(
       PhabricatorSearchRelationship::RELATIONSHIP_AUTHOR,
       $content->getAuthorPHID(),
-      PhabricatorPeoplePHIDTypeUser::TYPECONST,
+      PhabricatorPeopleUserPHIDType::TYPECONST,
       $content->getDateCreated());
 
-    if ($document->getStatus() == PhrictionDocumentStatus::STATUS_EXISTS) {
-      $doc->addRelationship(
-        PhabricatorSearchRelationship::RELATIONSHIP_OPEN,
-        $document->getPHID(),
-        PhrictionPHIDTypeDocument::TYPECONST,
-        time());
-    }
+    $doc->addRelationship(
+      ($document->getStatus() == PhrictionDocumentStatus::STATUS_EXISTS)
+        ? PhabricatorSearchRelationship::RELATIONSHIP_OPEN
+        : PhabricatorSearchRelationship::RELATIONSHIP_CLOSED,
+      $document->getPHID(),
+      PhrictionDocumentPHIDType::TYPECONST,
+      time());
 
     return $doc;
   }

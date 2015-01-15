@@ -18,7 +18,7 @@ abstract class PhabricatorPeopleController extends PhabricatorController {
 
     if ($viewer->getIsAdmin()) {
       $nav->addLabel(pht('User Administration'));
-      if (PhabricatorAuthProviderLDAP::getLDAPProvider()) {
+      if (PhabricatorLDAPAuthProvider::getLDAPProvider()) {
         $nav->addFilter('ldap', pht('Import from LDAP'));
       }
 
@@ -28,22 +28,23 @@ abstract class PhabricatorPeopleController extends PhabricatorController {
     return $nav;
   }
 
-  public function buildApplicationMenu() {
+  protected function buildApplicationMenu() {
     return $this->buildSideNavView()->getMenu();
   }
 
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $viewer = $this->getRequest()->getUser();
 
-    if ($viewer->getIsAdmin()) {
-      $crumbs->addAction(
-        id(new PHUIListItemView())
-          ->setName(pht('Create New User'))
-          ->setHref($this->getApplicationURI('edit'))
-          ->setIcon('create'));
-    }
+    $can_create = $this->hasApplicationCapability(
+      PeopleCreateUsersCapability::CAPABILITY);
+    $crumbs->addAction(
+      id(new PHUIListItemView())
+      ->setName(pht('Create New User'))
+      ->setHref($this->getApplicationURI('create/'))
+      ->setDisabled(!$can_create)
+      ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }

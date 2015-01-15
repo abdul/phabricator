@@ -1,14 +1,12 @@
 <?php
 
-/**
- * @group repository
- */
 final class PhabricatorRepositoryArcanistProject
   extends PhabricatorRepositoryDAO
-  implements PhabricatorPolicyInterface {
+  implements
+    PhabricatorPolicyInterface,
+    PhabricatorDestructibleInterface {
 
   protected $name;
-  protected $phid;
   protected $repositoryID;
 
   protected $symbolIndexLanguages = array();
@@ -16,7 +14,7 @@ final class PhabricatorRepositoryArcanistProject
 
   private $repository = self::ATTACHABLE;
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID   => true,
       self::CONFIG_TIMESTAMPS => false,
@@ -24,15 +22,30 @@ final class PhabricatorRepositoryArcanistProject
         'symbolIndexLanguages' => self::SERIALIZATION_JSON,
         'symbolIndexProjects'  => self::SERIALIZATION_JSON,
       ),
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'name' => 'text128',
+        'repositoryID' => 'id?',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'name' => array(
+          'columns' => array('name'),
+          'unique' => true,
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorRepositoryPHIDTypeArcanistProject::TYPECONST);
+      PhabricatorRepositoryArcanistProjectPHIDType::TYPECONST);
   }
 
-  // TODO: Remove.
+  // TODO: Remove. Also, T603.
   public function loadRepository() {
     if (!$this->getRepositoryID()) {
       return null;
@@ -85,6 +98,21 @@ final class PhabricatorRepositoryArcanistProject
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     return false;
+  }
+
+  public function describeAutomaticCapability($capability) {
+    return null;
+  }
+
+
+/* -(  PhabricatorDestructibleInterface  )----------------------------------- */
+
+  public function destroyObjectPermanently(
+    PhabricatorDestructionEngine $engine) {
+
+    $this->openTransaction();
+    $this->delete();
+    $this->saveTransaction();
   }
 
 }

@@ -4,14 +4,29 @@ final class PhabricatorAuthLoginController
   extends PhabricatorAuthController {
 
   private $providerKey;
+  private $extraURIData;
   private $provider;
 
   public function shouldRequireLogin() {
     return false;
   }
 
+  public function shouldAllowRestrictedParameter($parameter_name) {
+    // Whitelist the OAuth 'code' parameter.
+
+    if ($parameter_name == 'code') {
+      return true;
+    }
+    return parent::shouldAllowRestrictedParameter($parameter_name);
+  }
+
   public function willProcessRequest(array $data) {
     $this->providerKey = $data['pkey'];
+    $this->extraURIData = idx($data, 'extra');
+  }
+
+  public function getExtraURIData() {
+    return $this->extraURIData;
   }
 
   public function processRequest() {
@@ -53,7 +68,7 @@ final class PhabricatorAuthLoginController
 
     if (!$account) {
       throw new Exception(
-        "Auth provider failed to load an account from processLoginRequest()!");
+        'Auth provider failed to load an account from processLoginRequest()!');
     }
 
     if ($account->getUserPHID()) {
@@ -79,7 +94,7 @@ final class PhabricatorAuthLoginController
       } else {
         return $this->renderError(
           pht(
-            'The external account ("%s") you just used to login is alerady '.
+            'The external account ("%s") you just used to login is already '.
             'associated with another Phabricator user account. Login to the '.
             'other Phabricator account and unlink the external account before '.
             'linking it to a new Phabricator account.',
@@ -149,7 +164,7 @@ final class PhabricatorAuthLoginController
     $next_uri) {
 
     if ($account->getUserPHID()) {
-      throw new Exception("Account is already registered or linked.");
+      throw new Exception('Account is already registered or linked.');
     }
 
     // Regenerate the registration secret key, set it on the external account,
@@ -166,7 +181,9 @@ final class PhabricatorAuthLoginController
       $account->save();
     unset($unguarded);
 
-    $this->getRequest()->setCookie('phreg', $registration_key);
+    $this->getRequest()->setTemporaryCookie(
+      PhabricatorCookies::COOKIE_REGISTRATION,
+      $registration_key);
 
     return id(new AphrontRedirectResponse())->setURI($next_uri);
   }
@@ -202,20 +219,12 @@ final class PhabricatorAuthLoginController
     $crumbs = $this->buildApplicationCrumbs();
 
     if ($this->getRequest()->getUser()->isLoggedIn()) {
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht('Link Account'))
-          ->setHref($provider->getSettingsURI()));
+      $crumbs->addTextCrumb(pht('Link Account'), $provider->getSettingsURI());
     } else {
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht('Login'))
-          ->setHref($this->getApplicationURI('start/')));
+      $crumbs->addTextCrumb(pht('Login'), $this->getApplicationURI('start/'));
     }
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($provider->getProviderName()));
+    $crumbs->addTextCrumb($provider->getProviderName());
 
     return $this->buildApplicationPage(
       array(
@@ -224,7 +233,6 @@ final class PhabricatorAuthLoginController
       ),
       array(
         'title' => pht('Login'),
-        'device' => true,
       ));
   }
 

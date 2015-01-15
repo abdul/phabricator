@@ -4,7 +4,14 @@ final class PhabricatorRepositoryCommit
   extends PhabricatorRepositoryDAO
   implements
     PhabricatorPolicyInterface,
-    PhabricatorTokenReceiverInterface {
+    PhabricatorFlaggableInterface,
+    PhabricatorProjectInterface,
+    PhabricatorTokenReceiverInterface,
+    PhabricatorSubscribableInterface,
+    PhabricatorMentionableInterface,
+    HarbormasterBuildableInterface,
+    PhabricatorCustomFieldInterface,
+    PhabricatorApplicationTransactionInterface {
 
   protected $repositoryID;
   protected $phid;
@@ -14,40 +21,90 @@ final class PhabricatorRepositoryCommit
   protected $authorPHID;
   protected $auditStatus = PhabricatorAuditCommitStatusConstants::NONE;
   protected $summary = '';
+  protected $importStatus = 0;
+
+  const IMPORTED_MESSAGE = 1;
+  const IMPORTED_CHANGE = 2;
+  const IMPORTED_OWNERS = 4;
+  const IMPORTED_HERALD = 8;
+  const IMPORTED_ALL = 15;
+
+  const IMPORTED_CLOSEABLE = 1024;
 
   private $commitData = self::ATTACHABLE;
-  private $audits;
-  private $isUnparsed;
+  private $audits = self::ATTACHABLE;
   private $repository = self::ATTACHABLE;
+  private $customFields = self::ATTACHABLE;
 
   public function attachRepository(PhabricatorRepository $repository) {
     $this->repository = $repository;
     return $this;
   }
 
-  public function getRepository() {
-    return $this->assertAttached($this->repository);
+  public function getRepository($assert_attached = true) {
+    if ($assert_attached) {
+      return $this->assertAttached($this->repository);
+    }
+    return $this->repository;
   }
 
-  public function setIsUnparsed($is_unparsed) {
-    $this->isUnparsed = $is_unparsed;
+  public function isPartiallyImported($mask) {
+    return (($mask & $this->getImportStatus()) == $mask);
+  }
+
+  public function isImported() {
+    return $this->isPartiallyImported(self::IMPORTED_ALL);
+  }
+
+  public function writeImportStatusFlag($flag) {
+    queryfx(
+      $this->establishConnection('w'),
+      'UPDATE %T SET importStatus = (importStatus | %d) WHERE id = %d',
+      $this->getTableName(),
+      $flag,
+      $this->getID());
+    $this->setImportStatus($this->getImportStatus() | $flag);
     return $this;
   }
 
-  public function getIsUnparsed() {
-    return $this->isUnparsed;
-  }
-
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID   => true,
       self::CONFIG_TIMESTAMPS => false,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'commitIdentifier' => 'text40',
+        'mailKey' => 'bytes20',
+        'authorPHID' => 'phid?',
+        'auditStatus' => 'uint32',
+        'summary' => 'text80',
+        'importStatus' => 'uint32',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'repositoryID' => array(
+          'columns' => array('repositoryID', 'importStatus'),
+        ),
+        'authorPHID' => array(
+          'columns' => array('authorPHID', 'auditStatus', 'epoch'),
+        ),
+        'repositoryID_2' => array(
+          'columns' => array('repositoryID', 'epoch'),
+        ),
+        'key_commit_identity' => array(
+          'columns' => array('commitIdentifier', 'repositoryID'),
+          'unique' => true,
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
     return PhabricatorPHID::generateNewPHID(
-      PhabricatorRepositoryPHIDTypeCommit::TYPECONST);
+      PhabricatorRepositoryCommitPHIDType::TYPECONST);
   }
 
   public function loadCommitData() {
@@ -59,7 +116,8 @@ final class PhabricatorRepositoryCommit
       $this->getID());
   }
 
-  public function attachCommitData(PhabricatorRepositoryCommitData $data) {
+  public function attachCommitData(
+    PhabricatorRepositoryCommitData $data = null) {
     $this->commitData = $data;
     return $this;
   }
@@ -69,13 +127,39 @@ final class PhabricatorRepositoryCommit
   }
 
   public function attachAudits(array $audits) {
-    assert_instances_of($audits, 'PhabricatorAuditComment');
+    assert_instances_of($audits, 'PhabricatorRepositoryAuditRequest');
     $this->audits = $audits;
     return $this;
   }
 
   public function getAudits() {
-    return $this->audits;
+    return $this->assertAttached($this->audits);
+  }
+
+  public function getAuthorityAudits(
+    PhabricatorUser $user,
+    array $authority_phids) {
+
+    $authority = array_fill_keys($authority_phids, true);
+    $audits = $this->getAudits();
+    $authority_audits = array();
+    foreach ($audits as $audit) {
+      $has_authority = !empty($authority[$audit->getAuditorPHID()]);
+      if ($has_authority) {
+        $commit_author = $this->getAuthorPHID();
+
+        // You don't have authority over package and project audits on your
+        // own commits.
+
+        $auditor_is_user = ($audit->getAuditorPHID() == $user->getPHID());
+        $user_is_author = ($commit_author == $user->getPHID());
+
+        if ($auditor_is_user || !$user_is_author) {
+          $authority_audits[$audit->getID()] = $audit;
+        }
+      }
+    }
+    return $authority_audits;
   }
 
   public function save() {
@@ -106,6 +190,13 @@ final class PhabricatorRepositoryCommit
   public function getDateCreated() {
     // This is primarily to make analysis of commits with the Fact engine work.
     return $this->getEpoch();
+  }
+
+  public function getURI() {
+    $repository = $this->getRepository();
+    $callsign = $repository->getCallsign();
+    $commit_identifier = $this->getCommitIdentifier();
+    return '/r'.$callsign.$commit_identifier;
   }
 
   /**
@@ -156,16 +247,30 @@ final class PhabricatorRepositoryCommit
   public function getCapabilities() {
     return array(
       PhabricatorPolicyCapability::CAN_VIEW,
+      PhabricatorPolicyCapability::CAN_EDIT,
     );
   }
 
   public function getPolicy($capability) {
-    return $this->getRepository()->getPolicy($capability);
+    switch ($capability) {
+      case PhabricatorPolicyCapability::CAN_VIEW:
+        return $this->getRepository()->getPolicy($capability);
+      case PhabricatorPolicyCapability::CAN_EDIT:
+        // TODO: (T603) Who should be able to edit a commit? For now, retain
+        // the existing policy.
+        return PhabricatorPolicies::POLICY_USER;
+    }
   }
 
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     return $this->getRepository()->hasAutomaticCapability($capability, $viewer);
   }
+
+  public function describeAutomaticCapability($capability) {
+    return pht(
+      'Commits inherit the policies of the repository they belong to.');
+  }
+
 
 /* -(  PhabricatorTokenReceiverInterface  )---------------------------------- */
 
@@ -191,11 +296,117 @@ final class PhabricatorRepositoryCommit
       'mailKey' => $this->getMailKey(),
       'authorPHID' => $this->getAuthorPHID(),
       'auditStatus' => $this->getAuditStatus(),
-      'summary' => $this->getSummary());
+      'summary' => $this->getSummary(),
+      'importStatus' => $this->getImportStatus(),
+    );
   }
 
   public static function newFromDictionary(array $dict) {
     return id(new PhabricatorRepositoryCommit())
       ->loadFromArray($dict);
   }
+
+
+/* -(  HarbormasterBuildableInterface  )------------------------------------- */
+
+
+  public function getHarbormasterBuildablePHID() {
+    return $this->getPHID();
+  }
+
+  public function getHarbormasterContainerPHID() {
+    return $this->getRepository()->getPHID();
+  }
+
+  public function getBuildVariables() {
+    $results = array();
+
+    $results['buildable.commit'] = $this->getCommitIdentifier();
+    $repo = $this->getRepository();
+
+    $results['repository.callsign'] = $repo->getCallsign();
+    $results['repository.vcs'] = $repo->getVersionControlSystem();
+    $results['repository.uri'] = $repo->getPublicCloneURI();
+
+    return $results;
+  }
+
+  public function getAvailableBuildVariables() {
+    return array(
+      'buildable.commit' => pht('The commit identifier, if applicable.'),
+      'repository.callsign' =>
+        pht('The callsign of the repository in Phabricator.'),
+      'repository.vcs' =>
+        pht('The version control system, either "svn", "hg" or "git".'),
+      'repository.uri' =>
+        pht('The URI to clone or checkout the repository from.'),
+    );
+  }
+
+
+/* -(  PhabricatorCustomFieldInterface  )------------------------------------ */
+
+
+  public function getCustomFieldSpecificationForRole($role) {
+    // TODO: We could make this configurable eventually, but just use the
+    // defaults for now.
+    return array();
+  }
+
+  public function getCustomFieldBaseClass() {
+    return 'PhabricatorCommitCustomField';
+  }
+
+  public function getCustomFields() {
+    return $this->assertAttached($this->customFields);
+  }
+
+  public function attachCustomFields(PhabricatorCustomFieldAttachment $fields) {
+    $this->customFields = $fields;
+    return $this;
+  }
+
+
+/* -(  PhabricatorSubscribableInterface  )----------------------------------- */
+
+
+  public function isAutomaticallySubscribed($phid) {
+
+    // TODO: This should also list auditors, but handling that is a bit messy
+    // right now because we are not guaranteed to have the data.
+
+    return ($phid == $this->getAuthorPHID());
+  }
+
+  public function shouldShowSubscribersProperty() {
+    return true;
+  }
+
+  public function shouldAllowSubscription($phid) {
+    return true;
+  }
+
+
+/* -(  PhabricatorApplicationTransactionInterface  )------------------------- */
+
+
+  public function getApplicationTransactionEditor() {
+    return new PhabricatorAuditEditor();
+  }
+
+  public function getApplicationTransactionObject() {
+    return $this;
+  }
+
+  public function getApplicationTransactionTemplate() {
+    return new PhabricatorAuditTransaction();
+  }
+
+  public function willRenderTimeline(
+    PhabricatorApplicationTransactionView $timeline,
+    AphrontRequest $request) {
+
+    return $timeline;
+  }
+
 }

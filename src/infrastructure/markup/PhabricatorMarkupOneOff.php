@@ -16,6 +16,16 @@ final class PhabricatorMarkupOneOff implements PhabricatorMarkupInterface {
 
   private $content;
   private $preserveLinebreaks;
+  private $engineRuleset;
+
+  public function setEngineRuleset($engine_ruleset) {
+    $this->engineRuleset = $engine_ruleset;
+    return $this;
+  }
+
+  public function getEngineRuleset() {
+    return $this->engineRuleset;
+  }
 
   public function setPreserveLinebreaks($preserve_linebreaks) {
     $this->preserveLinebreaks = $preserve_linebreaks;
@@ -36,10 +46,13 @@ final class PhabricatorMarkupOneOff implements PhabricatorMarkupInterface {
   }
 
   public function newMarkupEngine($field) {
-    return PhabricatorMarkupEngine::newMarkupEngine(
-      array(
-        'preserve-linebreaks' => $this->preserveLinebreaks,
-      ));
+    if ($this->engineRuleset) {
+      return PhabricatorMarkupEngine::getEngine($this->engineRuleset);
+    } else if ($this->preserveLinebreaks) {
+      return PhabricatorMarkupEngine::getEngine();
+    } else {
+      return PhabricatorMarkupEngine::getEngine('nolinebreaks');
+    }
   }
 
   public function getMarkupText($field) {

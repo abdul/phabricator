@@ -7,10 +7,10 @@
   position: fixed;
   right: 0px;
   top: 76px;
-  bottom: 0px;
+  bottom: 0;
   width: 240px;
   border-width: 0 0 0 1px;
-  border-color: #CCC;
+  border-color: {$lightblueborder};
   border-style: solid;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -62,21 +62,16 @@
   display: none;
 }
 
-.dropdown-menu-frame {
-  width: 200px !important;
-  margin-top: 4px;
-}
-
 .conpherence-widget-pane .widgets-body {
   position: fixed;
   overflow-y: auto;
-  bottom: 0px;
-  width: 100%;
+  bottom: 0;
   top: 76px;
+  width: 100%;
 }
 
 #widgets-settings {
- padding: 3px 6px;
+  padding: 3px 6px;
 }
 
 .device-desktop .conpherence-widget-pane .widgets-body {
@@ -105,22 +100,24 @@
   width: 32px;
   height: 32px;
   float: left;
+  font-size: 30px;
 }
 .conpherence-widget-pane #widgets-files .file-title {
   display: block;
   position: relative;
   top: -4px;
-  left: 10px;
+  left: 2px;
   overflow-x: hidden;
-  width: 165px;
+  width: 180px;
   font-weight: bold;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .conpherence-widget-pane #widgets-files .file-uploaded-by {
   color: #a1a5a9;
   position: relative;
   top: 0px;
-  left: 10px;
+  left: 2px;
   width: 170px;
   font-size: 11px;
 }

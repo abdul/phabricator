@@ -1,10 +1,6 @@
 <?php
 
-/**
- * @group phame
- */
-final class PhamePostPreviewController
-extends PhameController {
+final class PhamePostPreviewController extends PhameController {
 
   protected function getSideNavFilter() {
     return null;
@@ -23,8 +19,9 @@ extends PhameController {
       PhamePost::MARKUP_FIELD_BODY,
       $user);
 
-    $content = hsprintf('<div class="phabricator-remarkup">%s</div>', $content);
+    $content = phutil_tag_div('phabricator-remarkup', $content);
 
     return id(new AphrontAjaxResponse())->setContent($content);
   }
+
 }

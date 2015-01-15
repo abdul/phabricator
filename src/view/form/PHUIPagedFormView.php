@@ -1,7 +1,6 @@
 <?php
 
 /**
- *
  * @task page   Managing Pages
  */
 final class PHUIPagedFormView extends AphrontTagView {
@@ -13,6 +12,7 @@ final class PHUIPagedFormView extends AphrontTagView {
   private $nextPage;
   private $prevPage;
   private $complete;
+  private $cancelURI;
 
   protected function canAppendChild() {
     return false;
@@ -211,13 +211,22 @@ final class PHUIPagedFormView extends AphrontTagView {
     return $this->name.':'.$key;
   }
 
-  public function getTagContent() {
+  public function setCancelURI($cancel_uri) {
+    $this->cancelURI = $cancel_uri;
+    return $this;
+  }
+
+  public function getCancelURI() {
+    return $this->cancelURI;
+  }
+
+  protected function getTagContent() {
     $form = id(new AphrontFormView())
       ->setUser($this->getUser());
 
     $selected_page = $this->getSelectedPage();
     if (!$selected_page) {
-      throw new Exception("No selected page!");
+      throw new Exception('No selected page!');
     }
 
     $form->addHiddenInput(
@@ -240,10 +249,12 @@ final class PHUIPagedFormView extends AphrontTagView {
 
     if (!$this->isFirstPage($selected_page)) {
       $submit->addBackButton();
+    } else if ($this->getCancelURI()) {
+      $submit->addCancelButton($this->getCancelURI());
     }
 
     if ($this->isLastPage($selected_page)) {
-      $submit->addSubmitButton(pht("Save"));
+      $submit->addSubmitButton(pht('Save'));
     } else {
       $submit->addSubmitButton(pht("Continue \xC2\xBB"));
     }
@@ -251,21 +262,17 @@ final class PHUIPagedFormView extends AphrontTagView {
     $form->appendChild($selected_page);
     $form->appendChild($submit);
 
-    if ($errors) {
-      $errors = id(new AphrontErrorView())->setErrors($errors);
-    }
+    $box = id(new PHUIObjectBoxView())
+      ->setFormErrors($errors)
+      ->setForm($form);
 
-    $header = null;
     if ($selected_page->getPageName()) {
-      $header = id(new PhabricatorHeaderView())
+      $header = id(new PHUIHeaderView())
         ->setHeader($selected_page->getPageName());
+      $box->setHeader($header);
     }
 
-    return array(
-      $header,
-      $errors,
-      $form,
-    );
+    return $box;
   }
 
 }

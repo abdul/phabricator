@@ -1,15 +1,9 @@
 <?php
 
-final class PhabricatorApplicationLaunchView extends AphrontView {
+final class PhabricatorApplicationLaunchView extends AphrontTagView {
 
   private $application;
   private $status;
-  private $fullWidth;
-
-  public function setFullWidth($full_width) {
-    $this->fullWidth = $full_width;
-    return $this;
-  }
 
   public function setApplication(PhabricatorApplication $application) {
     $this->application = $application;
@@ -21,7 +15,19 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
     return $this;
   }
 
-  public function render() {
+  protected function getTagName() {
+    return $this->application ? 'a' : 'div';
+  }
+
+  protected function getTagAttributes() {
+    $application = $this->application;
+    return array(
+      'class' => array('phabricator-application-launch-container'),
+      'href'  => $application ? $application->getBaseURI() : null,
+    );
+  }
+
+  protected function getTagContent() {
     $application = $this->application;
 
     require_celerity_resource('phabricator-application-launch-view-css');
@@ -29,7 +35,6 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
 
     $content = array();
     $icon = null;
-    $create_button = null;
     if ($application) {
       $content[] = phutil_tag(
         'span',
@@ -38,23 +43,12 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
         ),
         $application->getName());
 
-      if ($application->isBeta()) {
-        $content[] = phutil_tag(
-          'span',
-          array(
-            'class' => 'phabricator-application-beta',
-          ),
-          "\xCE\xB2");
-      }
-
-      if ($this->fullWidth) {
-        $content[] = phutil_tag(
-          'span',
-          array(
-            'class' => 'phabricator-application-launch-description',
-          ),
-          $application->getShortDescription());
-      }
+      $content[] = phutil_tag(
+        'span',
+        array(
+          'class' => 'phabricator-application-launch-description',
+        ),
+        $application->getShortDescription());
 
       $counts = array();
       $text = array();
@@ -79,7 +73,7 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
           array(
             'class' => 'phabricator-application-attention-count',
           ),
-          $count);
+          PhabricatorApplication::formatStatusCount($count));
         }
 
 
@@ -89,7 +83,12 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
           array(
             'class' => 'phabricator-application-warning-count',
           ),
-          $counts[$warning]);
+          PhabricatorApplication::formatStatusCount($counts[$warning]));
+        }
+        if (nonempty($count1) && nonempty($count2)) {
+          $numbers = array($count1, ' / ', $count2);
+        } else {
+          $numbers = array($count1, $count2);
         }
 
         Javelin::initBehavior('phabricator-tooltips');
@@ -99,11 +98,12 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
             'sigil' => 'has-tooltip',
             'meta' => array(
               'tip' => implode("\n", $text),
-              'size' => 240,
+              'size' => 300,
+              'align' => 'E',
             ),
             'class' => 'phabricator-application-launch-attention',
           ),
-          array($count1, $count2));
+          $numbers);
       }
 
       $classes = array();
@@ -115,7 +115,7 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
       } else {
         $icon = $application->getIconName();
         $classes[] = 'sprite-apps-large';
-        $classes[] = 'apps-'.$icon.'-light-large';
+        $classes[] = 'apps-'.$icon.'-dark-large';
       }
 
       $icon = phutil_tag(
@@ -125,53 +125,12 @@ final class PhabricatorApplicationLaunchView extends AphrontView {
           'style' => nonempty(implode('; ', $styles), null),
         ),
         '');
-
-      $classes = array();
-      if ($application->getQuickCreateURI()) {
-        $classes[] = 'phabricator-application-create-icon';
-        $classes[] = 'sprite-icons';
-        $classes[] = 'icons-new-white';
-        $plus_icon = phutil_tag(
-          'span',
-          array(
-            'class' => implode(' ', $classes),
-          ),
-          '');
-
-        $create_button = phutil_tag(
-          'a',
-          array(
-            'href' => $application->getQuickCreateURI(),
-            'class' => 'phabricator-application-launch-create',
-          ),
-          $plus_icon);
-        $classes = array();
-        $classes[] = 'application-tile-create';
-      }
     }
 
-    $classes[] = 'phabricator-application-launch-container';
-    if ($this->fullWidth) {
-      $classes[] = 'application-tile-full';
-    }
-
-    $title = null;
-    if ($application && !$this->fullWidth) {
-      $title = $application->getShortDescription();
-    }
-
-    $app_button = phutil_tag(
-      $application ? 'a' : 'div',
-      array(
-        'class' => implode(' ', $classes),
-        'href'  => $application ? $application->getBaseURI() : null,
-        'title' => $title,
-      ),
-      array(
-        $icon,
-        $content,
-      ));
-
-    return array($app_button, $create_button);
+    return array(
+      $icon,
+      $content,
+    );
   }
+
 }

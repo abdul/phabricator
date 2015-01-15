@@ -1,57 +1,14 @@
 <?php
 
 /**
- * @task edges  Managing Edges
  * @task config Configuring Storage
  */
 abstract class PhabricatorLiskDAO extends LiskDAO {
 
-  private $edges = array();
   private static $namespaceStack = array();
 
-  const ATTACHABLE = "<attachable>";
-
-/* -(  Managing Edges  )----------------------------------------------------- */
-
-
-  /**
-   * @task edges
-   */
-  public function attachEdges(array $edges) {
-    foreach ($edges as $type => $type_edges) {
-      $this->edges[$type] = $type_edges;
-    }
-    return $this;
-  }
-
-
-  /**
-   * @task edges
-   */
-  public function getEdges($type) {
-    return $this->assertAttachedKey($this->edges, $type);
-  }
-
-
-  /**
-   * @task edges
-   */
-  public function loadRelativeEdges($type) {
-    if (!$this->getInSet()) {
-      id(new LiskDAOSet())->addToSet($this);
-    }
-    $this->getInSet()->loadRelativeEdges($type);
-    return $this->getEdges($type);
-  }
-
-
-  /**
-   * @task edges
-   */
-  public function getEdgePHIDs($type) {
-    return ipull($this->getEdges($type), 'dst');
-  }
-
+  const ATTACHABLE = '<attachable>';
+  const CONFIG_APPLICATION_SERIALIZERS = 'phabricator/serializers';
 
 /* -(  Configuring Storage  )------------------------------------------------ */
 
@@ -85,7 +42,7 @@ abstract class PhabricatorLiskDAO extends LiskDAO {
       $namespace = self::getDefaultStorageNamespace();
     }
     if (!strlen($namespace)) {
-      throw new Exception("No storage namespace configured!");
+      throw new Exception('No storage namespace configured!');
     }
     return $namespace;
   }
@@ -218,5 +175,70 @@ abstract class PhabricatorLiskDAO extends LiskDAO {
     }
     return $value[$key];
   }
+
+  protected function detectEncodingForStorage($string) {
+    return phutil_is_utf8($string) ? 'utf8' : null;
+  }
+
+  protected function getUTF8StringFromStorage($string, $encoding) {
+    if ($encoding == 'utf8') {
+      return $string;
+    }
+
+    if (function_exists('mb_detect_encoding')) {
+      if (strlen($encoding)) {
+        $try_encodings = array(
+          $encoding,
+        );
+      } else {
+        // TODO: This is pretty much a guess, and probably needs to be
+        // configurable in the long run.
+        $try_encodings = array(
+          'JIS',
+          'EUC-JP',
+          'SJIS',
+          'ISO-8859-1',
+        );
+      }
+
+      $guess = mb_detect_encoding($string, $try_encodings);
+      if ($guess) {
+        return mb_convert_encoding($string, 'UTF-8', $guess);
+      }
+    }
+
+    return phutil_utf8ize($string);
+  }
+
+  protected function willReadData(array &$data) {
+    parent::willReadData($data);
+
+    static $custom;
+    if ($custom === null) {
+      $custom = $this->getConfigOption(self::CONFIG_APPLICATION_SERIALIZERS);
+    }
+
+    if ($custom) {
+      foreach ($custom as $key => $serializer) {
+        $data[$key] = $serializer->willReadValue($data[$key]);
+      }
+    }
+  }
+
+  protected function willWriteData(array &$data) {
+    static $custom;
+    if ($custom === null) {
+      $custom = $this->getConfigOption(self::CONFIG_APPLICATION_SERIALIZERS);
+    }
+
+    if ($custom) {
+      foreach ($custom as $key => $serializer) {
+        $data[$key] = $serializer->willWriteValue($data[$key]);
+      }
+    }
+
+    parent::willWriteData($data);
+  }
+
 
 }

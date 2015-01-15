@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group search
- */
 final class PhabricatorNamedQueryQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -81,4 +78,9 @@ final class PhabricatorNamedQueryQuery
 
     return $this->formatWhereClause($where);
   }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorSearchApplication';
+  }
+
 }

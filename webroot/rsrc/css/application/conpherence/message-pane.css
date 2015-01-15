@@ -7,7 +7,7 @@
 .loading .messages-loading-icon,
 .conpherence-layout .conpherence-no-threads {
   position: fixed;
-  left: 280px;
+  left: 240px;
   right: 241px;
   top: 76px;
   bottom: 0px;
@@ -47,12 +47,11 @@
 
 .conpherence-message-pane .conpherence-messages {
   position: fixed;
-  left: 280px;
+  left: 240px;
   right: 241px;
   top: 76px;
-  bottom: 190px;
+  bottom: 185px;
   overflow-y: auto;
-  box-shadow: inset 1px 4px 5px rgba(0,0,0,0.1);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -77,11 +76,11 @@
 .conpherence-message-pane .phui-form-view {
   border-width: 0;
   background-color: {$lightgreybackground};
-  height: 190px;
+  height: 185px;
   padding: 0;
   position: fixed;
   bottom: 0;
-  left: 280px;
+  left: 240px;
   right: 241px;
 }
 
@@ -105,7 +104,7 @@
   left: 0;
   right: 0;
   background-color: #d8dce2;
-  height: 3em;
+  height: 38px;
   width: 100%;
 }
 
@@ -135,6 +134,9 @@
   margin: 5px 15px;
   min-height: auto;
 }
+.device-phone .conpherence-message-pane .date-marker {
+  margin: 5px 0;
+}
 .conpherence-message-pane .date-marker .date {
   position: relative;
   top: -8px;
@@ -159,12 +161,13 @@
 }
 
 .conpherence-message-pane .conpherence-edited .phabricator-transaction-content {
- padding: 0 0 5px 45px;
- font-style: italic;
+  padding: 0 0 5px 45px;
+  font-style: italic;
 }
 
-.device-phone .conpherence-message-pane .conpherence-edited .phabricator-transaction-content {
- padding: 0 0 5px 35px;
+.device-phone .conpherence-message-pane .conpherence-edited
+  .phabricator-transaction-content {
+  padding: 0 0 5px 35px;
 }
 
 .conpherence-message-pane .phabricator-transaction-info,
@@ -189,11 +192,11 @@
 }
 
 .conpherence-message-pane .aphront-form-control-submit {
-  margin: 3px 8px 0 0;
+  margin: 0 8px 0 0;
 }
 .conpherence-message-pane .remarkup-assist-bar {
   border-width: 1px 0 0;
-  border-color: #CCC;
+  border-color: {$hovergrey};
   border-bottom: transparent;
 }
 
@@ -201,7 +204,7 @@
   height: 124px;
   padding: 6px;
   border-width: 1px 0;
-  border-color: {$lightblueborder};
+  border-color: {$thinblueborder};
   box-sizing: border-box;
   -moz-box-sizing: border-box;
   -webkit-box-sizing: border-box;
@@ -209,10 +212,10 @@
 }
 
 .device .conpherence-message-pane .remarkup-assist-textarea {
-  margin: 0.5em 0em 0em 2%;
-  padding: 6px 1%;
-  width: 98%;
-  height: 2em;
+  margin: 4px 8px;
+  padding: 6px 6px;
+  width: 97%;
+  height: 28px;
   resize: none;
 }
 
@@ -228,9 +231,9 @@
   width: 76%;
 }
 .device-phone .conpherence-message-pane .aphront-form-control-textarea {
-  width: 63%;
+  width: 60%;
 }
 
 .device .conpherence-message-pane .aphront-form-control-submit button {
-  margin: 0.6em 0 0 2%;
+  margin: 7px 0 0 0;
 }

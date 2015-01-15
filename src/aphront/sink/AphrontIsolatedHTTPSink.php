@@ -2,8 +2,6 @@
 
 /**
  * Isolated HTTP sink for testing.
- *
- * @group aphront
  */
 final class AphrontIsolatedHTTPSink extends AphrontHTTPSink {
 
@@ -11,7 +9,7 @@ final class AphrontIsolatedHTTPSink extends AphrontHTTPSink {
   private $headers;
   private $data;
 
-  protected function emitHTTPStatus($code) {
+  protected function emitHTTPStatus($code, $message = '') {
     $this->status = $code;
   }
 

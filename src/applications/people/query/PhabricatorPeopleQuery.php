@@ -13,6 +13,7 @@ final class PhabricatorPeopleQuery
   private $isAdmin;
   private $isSystemAgent;
   private $isDisabled;
+  private $isApproved;
   private $nameLike;
 
   private $needPrimaryEmail;
@@ -70,6 +71,11 @@ final class PhabricatorPeopleQuery
     return $this;
   }
 
+  public function withIsApproved($approved) {
+    $this->isApproved = $approved;
+    return $this;
+  }
+
   public function withNameLike($like) {
     $this->nameLike = $like;
     return $this;
@@ -95,16 +101,17 @@ final class PhabricatorPeopleQuery
     return $this;
   }
 
-  public function loadPage() {
+  protected function loadPage() {
     $table  = new PhabricatorUser();
     $conn_r = $table->establishConnection('r');
 
     $data = queryfx_all(
       $conn_r,
-      'SELECT * FROM %T user %Q %Q %Q %Q',
+      'SELECT * FROM %T user %Q %Q %Q %Q %Q',
       $table->getTableName(),
       $this->buildJoinsClause($conn_r),
       $this->buildWhereClause($conn_r),
+      $this->buildApplicationSearchGroupClause($conn_r),
       $this->buildOrderClause($conn_r),
       $this->buildLimitClause($conn_r));
 
@@ -112,8 +119,10 @@ final class PhabricatorPeopleQuery
       $table->putInSet(new LiskDAOSet());
     }
 
-    $users = $table->loadAllFromArray($data);
+    return $table->loadAllFromArray($data);
+  }
 
+  protected function didFilterPage(array $users) {
     if ($this->needProfile) {
       $user_list = mpull($users, null, 'getPHID');
       $profiles = new PhabricatorUserProfile();
@@ -137,6 +146,7 @@ final class PhabricatorPeopleQuery
       $user_profile_file_phids = array_filter($user_profile_file_phids);
       if ($user_profile_file_phids) {
         $files = id(new PhabricatorFileQuery())
+          ->setParentQuery($this)
           ->setViewer($this->getViewer())
           ->withPHIDs($user_profile_file_phids)
           ->execute();
@@ -157,7 +167,7 @@ final class PhabricatorPeopleQuery
 
     if ($this->needStatus) {
       $user_list = mpull($users, null, 'getPHID');
-      $statuses = id(new PhabricatorUserStatus())->loadCurrentStatuses(
+      $statuses = id(new PhabricatorCalendarEvent())->loadCurrentStatuses(
         array_keys($user_list));
       foreach ($user_list as $phid => $user) {
         $status = idx($statuses, $phid);
@@ -181,6 +191,8 @@ final class PhabricatorPeopleQuery
         $email_table->getTableName());
     }
 
+    $joins[] = $this->buildApplicationSearchJoinClause($conn_r);
+
     $joins = implode(' ', $joins);
     return  $joins;
   }
@@ -188,35 +200,35 @@ final class PhabricatorPeopleQuery
   private function buildWhereClause($conn_r) {
     $where = array();
 
-    if ($this->usernames) {
+    if ($this->usernames !== null) {
       $where[] = qsprintf(
         $conn_r,
         'user.userName IN (%Ls)',
         $this->usernames);
     }
 
-    if ($this->emails) {
+    if ($this->emails !== null) {
       $where[] = qsprintf(
         $conn_r,
         'email.address IN (%Ls)',
         $this->emails);
     }
 
-    if ($this->realnames) {
+    if ($this->realnames !== null) {
       $where[] = qsprintf(
         $conn_r,
         'user.realName IN (%Ls)',
         $this->realnames);
     }
 
-    if ($this->phids) {
+    if ($this->phids !== null) {
       $where[] = qsprintf(
         $conn_r,
         'user.phid IN (%Ls)',
         $this->phids);
     }
 
-    if ($this->ids) {
+    if ($this->ids !== null) {
       $where[] = qsprintf(
         $conn_r,
         'user.id IN (%Ld)',
@@ -243,10 +255,18 @@ final class PhabricatorPeopleQuery
         'user.isAdmin = 1');
     }
 
-    if ($this->isDisabled) {
+    if ($this->isDisabled !== null) {
       $where[] = qsprintf(
         $conn_r,
-        'user.isDisabled = 1');
+        'user.isDisabled = %d',
+        (int)$this->isDisabled);
+    }
+
+    if ($this->isApproved !== null) {
+      $where[] = qsprintf(
+        $conn_r,
+        'user.isApproved = %d',
+        (int)$this->isApproved);
     }
 
     if ($this->isSystemAgent) {
@@ -263,11 +283,21 @@ final class PhabricatorPeopleQuery
         $this->nameLike);
     }
 
+    $where[] = $this->buildPagingClause($conn_r);
+
     return $this->formatWhereClause($where);
   }
 
   protected function getPagingColumn() {
     return 'user.id';
+  }
+
+  protected function getApplicationSearchObjectPHIDColumn() {
+    return 'user.phid';
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorPeopleApplication';
   }
 
 }

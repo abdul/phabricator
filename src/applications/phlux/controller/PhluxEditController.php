@@ -48,7 +48,7 @@ final class PhluxEditController extends PhluxController {
         if (!strlen($key)) {
           $errors[] = pht('Variable key is required.');
           $e_key = pht('Required');
-        } else if (!preg_match('/^[a-z0-9.-]+$/', $key)) {
+        } else if (!preg_match('/^[a-z0-9.-]+\z/', $key)) {
           $errors[] = pht(
             'Variable key "%s" must contain only lowercase letters, digits, '.
             'period, and hyphen.',
@@ -92,7 +92,7 @@ final class PhluxEditController extends PhluxController {
           $editor->applyTransactions($var, $xactions);
           $view_uri = $this->getApplicationURI('/view/'.$key.'/');
           return id(new AphrontRedirectResponse())->setURI($view_uri);
-        } catch (AphrontQueryDuplicateKeyException $ex) {
+        } catch (AphrontDuplicateKeyQueryException $ex) {
           $e_key = pht('Not Unique');
           $errors[] = pht('Variable key must be unique.');
         }
@@ -107,11 +107,6 @@ final class PhluxEditController extends PhluxController {
       } else {
         $display_value = json_encode($value);
       }
-    }
-
-    if ($errors) {
-      $errors = id(new AphrontErrorView())
-        ->setErrors($errors);
     }
 
     $policies = id(new PhabricatorPolicyQuery())
@@ -164,21 +159,15 @@ final class PhluxEditController extends PhluxController {
 
     if ($is_new) {
       $title = pht('Create Variable');
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName($title)
-          ->setHref($request->getRequestURI()));
+      $crumbs->addTextCrumb($title, $request->getRequestURI());
     } else {
       $title = pht('Edit %s', $this->key);
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName($title)
-          ->setHref($request->getRequestURI()));
+      $crumbs->addTextCrumb($title, $request->getRequestURI());
     }
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($title)
-      ->setFormError($errors)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     return $this->buildApplicationPage(
@@ -188,7 +177,6 @@ final class PhluxEditController extends PhluxController {
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

@@ -1,12 +1,13 @@
 <?php
 
-/**
- * @group conduit
- */
 final class PhabricatorConduitConsoleController
   extends PhabricatorConduitController {
 
   private $method;
+
+  public function shouldAllowPublic() {
+    return true;
+  }
 
   public function willProcessRequest(array $data) {
     $this->method = $data['method'];
@@ -26,49 +27,42 @@ final class PhabricatorConduitConsoleController
       return new Aphront404Response();
     }
 
+    $can_call_method = false;
+
     $status = $method->getMethodStatus();
     $reason = $method->getMethodStatusDescription();
+    $errors = array();
 
-    $status_view = null;
-    if ($status != ConduitAPIMethod::METHOD_STATUS_STABLE) {
-      $status_view = new AphrontErrorView();
-      switch ($status) {
-        case ConduitAPIMethod::METHOD_STATUS_DEPRECATED:
-          $status_view->setTitle('Deprecated Method');
-          $status_view->appendChild(
-            nonempty($reason, "This method is deprecated."));
-          break;
-        case ConduitAPIMethod::METHOD_STATUS_UNSTABLE:
-          $status_view->setSeverity(AphrontErrorView::SEVERITY_WARNING);
-          $status_view->setTitle('Unstable Method');
-          $status_view->appendChild(
-            nonempty(
-              $reason,
-              "This method is new and unstable. Its interface is subject ".
-              "to change."));
-          break;
-      }
+    switch ($status) {
+      case ConduitAPIMethod::METHOD_STATUS_DEPRECATED:
+        $reason = nonempty($reason, pht('This method is deprecated.'));
+        $errors[] = pht('Deprecated Method: %s', $reason);
+        break;
+      case ConduitAPIMethod::METHOD_STATUS_UNSTABLE:
+        $reason = nonempty(
+          $reason,
+          pht(
+            'This method is new and unstable. Its interface is subject '.
+            'to change.'));
+        $errors[] = pht('Unstable Method: %s', $reason);
+        break;
     }
 
     $error_types = $method->defineErrorTypes();
-    if ($error_types) {
-      $error_description = array();
-      foreach ($error_types as $error => $meaning) {
-        $error_description[] = hsprintf(
-          '<li><strong>%s:</strong> %s</li>',
-          $error,
-          $meaning);
-      }
-      $error_description = phutil_tag('ul', array(), $error_description);
-    } else {
-      $error_description = "This method does not raise any specific errors.";
+    $error_types['ERR-CONDUIT-CORE'] = pht('See error message for details.');
+    $error_description = array();
+    foreach ($error_types as $error => $meaning) {
+      $error_description[] = hsprintf(
+        '<li><strong>%s:</strong> %s</li>',
+        $error,
+        $meaning);
     }
+    $error_description = phutil_tag('ul', array(), $error_description);
 
     $form = new AphrontFormView();
     $form
       ->setUser($request->getUser())
       ->setAction('/api/'.$this->method)
-      ->addHiddenInput('allowEmptyParams', 1)
       ->appendChild(
         id(new AphrontFormStaticControl())
           ->setLabel('Description')
@@ -95,30 +89,40 @@ final class PhabricatorConduitConsoleController
           ->setCaption($desc));
     }
 
-    $form
-      ->appendChild(
-        id(new AphrontFormSelectControl())
-          ->setLabel('Output Format')
-          ->setName('output')
-          ->setOptions(
-            array(
-              'human' => 'Human Readable',
-              'json'  => 'JSON',
-            )))
-      ->appendChild(
-        id(new AphrontFormSubmitControl())
-          ->addCancelButton($this->getApplicationURI())
-          ->setValue('Call Method'));
+    $must_login = !$viewer->isLoggedIn() &&
+                  $method->shouldRequireAuthentication();
+    if ($must_login) {
+      $errors[] = pht(
+        'Login Required: This method requires authentication. You must '.
+        'log in before you can make calls to it.');
+    } else {
+      $form
+        ->appendChild(
+          id(new AphrontFormSelectControl())
+            ->setLabel('Output Format')
+            ->setName('output')
+            ->setOptions(
+              array(
+                'human' => 'Human Readable',
+                'json'  => 'JSON',
+              )))
+        ->appendChild(
+          id(new AphrontFormSubmitControl())
+            ->addCancelButton($this->getApplicationURI())
+            ->setValue(pht('Call Method')));
+    }
 
-    $form_box = id(new PHUIFormBoxView())
-      ->setHeaderText($method->getAPIMethodName())
-      ->setFormError($status_view)
+    $header = id(new PHUIHeaderView())
+      ->setUser($viewer)
+      ->setHeader($method->getAPIMethodName());
+
+    $form_box = id(new PHUIObjectBoxView())
+      ->setHeader($header)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($method->getAPIMethodName()));
+    $crumbs->addTextCrumb($method->getAPIMethodName());
 
     return $this->buildApplicationPage(
       array(
@@ -127,7 +131,6 @@ final class PhabricatorConduitConsoleController
       ),
       array(
         'title' => $method->getAPIMethodName(),
-        'device' => true,
       ));
   }
 

@@ -23,7 +23,9 @@ foreach ($input as $file) {
   $futures[$file] = xhpast_get_parser_future($data[$file]);
 }
 
-foreach (Futures($futures)->limit(8) as $file => $future) {
+$futures = id(new FutureIterator($futures))
+  ->limit(8);
+foreach ($futures as $file => $future) {
   $tree = XHPASTTree::newFromDataAndResolvedExecFuture(
     $data[$file],
     $future->resolve());
@@ -34,6 +36,10 @@ foreach (Futures($futures)->limit(8) as $file => $future) {
   $functions = $root->selectDescendantsOfType('n_FUNCTION_DECLARATION');
   foreach ($functions as $function) {
     $name = $function->getChildByIndex(2);
+    // Skip anonymous functions
+    if (!$name->getConcreteString()) {
+      continue;
+    }
     print_symbol($file, 'function', $name);
   }
 
@@ -94,7 +100,7 @@ foreach (Futures($futures)->limit(8) as $file => $future) {
   }
 }
 
-function print_symbol($file, $type, $token, $context=null) {
+function print_symbol($file, $type, $token, $context = null) {
   $parts = array(
     $context ? $context->getConcreteString() : '',
     // variable tokens are `$name`, not just `name`, so strip the $ off of

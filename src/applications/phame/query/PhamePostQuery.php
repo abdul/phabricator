@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhamePostQuery extends PhabricatorCursorPagedPolicyAwareQuery {
 
   private $ids;
@@ -139,6 +136,11 @@ final class PhamePostQuery extends PhabricatorCursorPagedPolicyAwareQuery {
     $where[] = $this->buildPagingClause($conn_r);
 
     return $this->formatWhereClause($where);
+  }
+
+  public function getQueryApplicationClass() {
+    // TODO: Does setting this break public blogs?
+    return null;
   }
 
 }

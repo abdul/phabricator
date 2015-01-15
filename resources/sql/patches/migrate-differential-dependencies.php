@@ -8,18 +8,17 @@ foreach (new LiskMigrationIterator($table) as $rev) {
   $id = $rev->getID();
   echo "Revision {$id}: ";
 
-  $deps = $rev->getAttachedPHIDs(DifferentialPHIDTypeRevision::TYPECONST);
+  $deps = $rev->getAttachedPHIDs(DifferentialRevisionPHIDType::TYPECONST);
   if (!$deps) {
     echo "-\n";
     continue;
   }
 
   $editor = new PhabricatorEdgeEditor();
-  $editor->setSuppressEvents(true);
   foreach ($deps as $dep) {
     $editor->addEdge(
       $rev->getPHID(),
-      PhabricatorEdgeConfig::TYPE_DREV_DEPENDS_ON_DREV,
+      DifferentialRevisionDependsOnRevisionEdgeType::EDGECONST,
       $dep);
   }
   $editor->save();

@@ -1,6 +1,6 @@
 <?php
 
-final class PhabricatorDaemonEventListener extends PhutilEventListener {
+final class PhabricatorDaemonEventListener extends PhabricatorEventListener {
 
   private $daemons = array();
 
@@ -8,6 +8,7 @@ final class PhabricatorDaemonEventListener extends PhutilEventListener {
     $this->listen(PhutilDaemonOverseer::EVENT_DID_LAUNCH);
     $this->listen(PhutilDaemonOverseer::EVENT_DID_LOG);
     $this->listen(PhutilDaemonOverseer::EVENT_DID_HEARTBEAT);
+    $this->listen(PhutilDaemonOverseer::EVENT_WILL_GRACEFUL);
     $this->listen(PhutilDaemonOverseer::EVENT_WILL_EXIT);
   }
 
@@ -22,6 +23,9 @@ final class PhabricatorDaemonEventListener extends PhutilEventListener {
       case PhutilDaemonOverseer::EVENT_DID_LOG:
         $this->handleLogEvent($event);
         break;
+      case PhutilDaemonOverseer::EVENT_WILL_GRACEFUL:
+        $this->handleGracefulEvent($event);
+        break;
       case PhutilDaemonOverseer::EVENT_WILL_EXIT:
         $this->handleExitEvent($event);
         break;
@@ -30,13 +34,17 @@ final class PhabricatorDaemonEventListener extends PhutilEventListener {
 
   private function handleLaunchEvent(PhutilEvent $event) {
     $id = $event->getValue('id');
+    $current_user = posix_getpwuid(posix_geteuid());
 
     $daemon = id(new PhabricatorDaemonLog())
       ->setDaemon($event->getValue('daemonClass'))
       ->setHost(php_uname('n'))
       ->setPID(getmypid())
+      ->setRunningAsUser($current_user['name'])
+      ->setEnvHash(PhabricatorEnv::calculateEnvironmentHash())
       ->setStatus(PhabricatorDaemonLog::STATUS_RUNNING)
       ->setArgv($event->getValue('argv'))
+      ->setExplicitArgv($event->getValue('explicitArgv'))
       ->save();
 
     $this->daemons[$id] = $daemon;
@@ -83,6 +91,13 @@ final class PhabricatorDaemonEventListener extends PhutilEventListener {
     if ($current_status !== $daemon->getStatus()) {
       $daemon->setStatus($current_status)->save();
     }
+  }
+
+  private function handleGracefulEvent(PhutilEvent $event) {
+    $id = $event->getValue('id');
+
+    $daemon = $this->getDaemon($id);
+    $daemon->setStatus(PhabricatorDaemonLog::STATUS_EXITING)->save();
   }
 
   private function handleExitEvent(PhutilEvent $event) {

@@ -18,6 +18,7 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
   private $requestURI;
   private $showPreview = true;
   private $objectPHID;
+  private $headerText;
 
   public function setObjectPHID($object_phid) {
     $this->objectPHID = $object_phid;
@@ -72,25 +73,28 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
     return $this->action;
   }
 
+  public function setHeaderText($text) {
+    $this->headerText = $text;
+    return $this;
+  }
+
   public function render() {
 
     $user = $this->getUser();
     if (!$user->isLoggedIn()) {
       $uri = id(new PhutilURI('/login/'))
         ->setQueryParam('next', (string) $this->getRequestURI());
-      return phutil_tag(
-        'div',
-        array(
-          'class' => 'login-to-comment'
-        ),
-        javelin_tag(
-          'a',
-          array(
-            'class' => 'button',
-            'sigil' => 'workflow',
-            'href' => $uri
-          ),
-          pht('Login to Comment')));
+      return id(new PHUIObjectBoxView())
+        ->setFlush(true)
+        ->setHeaderText(pht('Add Comment'))
+        ->appendChild(
+          javelin_tag(
+            'a',
+            array(
+              'class' => 'login-to-comment button',
+              'href' => $uri,
+            ),
+            pht('Login to Comment')));
     }
 
     $data = array();
@@ -119,12 +123,14 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
         'showPreview'   => $this->getShowPreview(),
 
         'actionURI'     => $this->getAction(),
-        'draftKey'      => $this->getDraft()
-          ? $this->getDraft()->getDraftKey()
-          : null,
       ));
 
-    return array($comment, $preview);
+    $comment_box = id(new PHUIObjectBoxView())
+      ->setFlush(true)
+      ->setHeaderText($this->headerText)
+      ->appendChild($comment);
+
+    return array($comment_box, $preview);
   }
 
   private function renderCommentPanel() {
@@ -136,25 +142,27 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
       '');
 
     $draft_comment = '';
+    $draft_key = null;
     if ($this->getDraft()) {
       $draft_comment = $this->getDraft()->getDraft();
+      $draft_key = $this->getDraft()->getDraftKey();
     }
 
     if (!$this->getObjectPHID()) {
-      throw new Exception("Call setObjectPHID() before render()!");
+      throw new Exception('Call setObjectPHID() before render()!');
     }
 
     return id(new AphrontFormView())
       ->setUser($this->getUser())
       ->addSigil('transaction-append')
       ->setWorkflow(true)
-      ->setShaded(true)
       ->setMetadata(
         array(
           'objectPHID' => $this->getObjectPHID(),
         ))
       ->setAction($this->getAction())
       ->setID($this->getFormID())
+      ->addHiddenInput('__draft__', $draft_key)
       ->appendChild(
         id(new PhabricatorRemarkupControl())
           ->setID($this->getCommentID())
@@ -172,15 +180,8 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
 
   private function renderPreviewPanel() {
 
-    $preview = id(new PhabricatorTimelineView())
+    $preview = id(new PHUITimelineView())
       ->setID($this->getPreviewTimelineID());
-
-    $header = phutil_tag(
-      'div',
-      array(
-        'class' => 'phabricator-timeline-preview-header',
-      ),
-      pht('Preview'));
 
     return phutil_tag(
       'div',
@@ -188,10 +189,7 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
         'id'    => $this->getPreviewPanelID(),
         'style' => 'display: none',
       ),
-      array(
-        $header,
-        $preview,
-      ));
+      $preview);
   }
 
   private function getPreviewPanelID() {
@@ -235,4 +233,3 @@ class PhabricatorApplicationTransactionCommentView extends AphrontView {
   }
 
 }
-

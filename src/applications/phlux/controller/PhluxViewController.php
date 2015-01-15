@@ -25,13 +25,12 @@ final class PhluxViewController extends PhluxController {
 
     $title = $var->getVariableKey();
 
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title)
-        ->setHref($request->getRequestURI()));
+    $crumbs->addTextCrumb($title, $request->getRequestURI());
 
-    $header = id(new PhabricatorHeaderView())
-      ->setHeader($title);
+    $header = id(new PHUIHeaderView())
+      ->setHeader($title)
+      ->setUser($user)
+      ->setPolicyObject($var);
 
     $actions = id(new PhabricatorActionListView())
       ->setUser($user)
@@ -45,7 +44,7 @@ final class PhluxViewController extends PhluxController {
 
     $actions->addAction(
       id(new PhabricatorActionView())
-        ->setIcon('edit')
+        ->setIcon('fa-pencil')
         ->setName(pht('Edit Variable'))
         ->setHref($this->getApplicationURI('/edit/'.$var->getVariableKey().'/'))
         ->setDisabled(!$can_edit)
@@ -53,47 +52,29 @@ final class PhluxViewController extends PhluxController {
 
     $display_value = json_encode($var->getVariableValue());
 
-    $descriptions = PhabricatorPolicyQuery::renderPolicyDescriptions(
-      $user,
-      $var);
-
-    $properties = id(new PhabricatorPropertyListView())
+    $properties = id(new PHUIPropertyListView())
       ->setUser($user)
       ->setObject($var)
-      ->addProperty(pht('Value'), $display_value)
-      ->addProperty(
-        pht('Visible To'),
-        $descriptions[PhabricatorPolicyCapability::CAN_VIEW])
-      ->addProperty(
-        pht('Editable By'),
-        $descriptions[PhabricatorPolicyCapability::CAN_EDIT]);
+      ->setActionList($actions)
+      ->addProperty(pht('Value'), $display_value);
 
+    $timeline = $this->buildTransactionTimeline(
+      $var,
+      new PhluxTransactionQuery());
+    $timeline->setShouldTerminate(true);
 
-    $xactions = id(new PhluxTransactionQuery())
-      ->setViewer($user)
-      ->withObjectPHIDs(array($var->getPHID()))
-      ->execute();
-
-    $engine = id(new PhabricatorMarkupEngine())
-      ->setViewer($user);
-
-    $xaction_view = id(new PhabricatorApplicationTransactionView())
-      ->setUser($user)
-      ->setObjectPHID($var->getPHID())
-      ->setTransactions($xactions)
-      ->setMarkupEngine($engine);
+    $object_box = id(new PHUIObjectBoxView())
+      ->setHeader($header)
+      ->addPropertyList($properties);
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
-        $header,
-        $actions,
-        $properties,
-        $xaction_view,
+        $object_box,
+        $timeline,
       ),
       array(
         'title'  => $title,
-        'device' => true,
       ));
   }
 

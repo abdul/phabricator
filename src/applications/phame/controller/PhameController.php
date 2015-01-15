@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 abstract class PhameController extends PhabricatorController {
 
   protected function renderSideNavFilterView() {
@@ -32,7 +29,7 @@ abstract class PhameController extends PhabricatorController {
 
   protected function renderPostList(
     array $posts,
-    PhabricatorUser $user,
+    PhabricatorUser $viewer,
     $nodata) {
     assert_instances_of($posts, 'PhamePost');
 
@@ -40,8 +37,8 @@ abstract class PhameController extends PhabricatorController {
 
     foreach ($posts as $post) {
       $blogger = $this->getHandle($post->getBloggerPHID())->renderLink();
-      $bloggerURI = $this->getHandle($post->getBloggerPHID())->getURI();
-      $bloggerImage = $this->getHandle($post->getBloggerPHID())->getImageURI();
+      $blogger_uri = $this->getHandle($post->getBloggerPHID())->getURI();
+      $blogger_image = $this->getHandle($post->getBloggerPHID())->getImageURI();
 
       $blog = null;
       if ($post->getBlog()) {
@@ -74,22 +71,39 @@ abstract class PhameController extends PhabricatorController {
 
       $story = id(new PHUIFeedStoryView())
         ->setTitle($title)
-        ->setImage($bloggerImage)
-        ->setImageHref($bloggerURI)
+        ->setImage($blogger_image)
+        ->setImageHref($blogger_uri)
         ->setAppIcon('phame-dark')
-        ->setUser($user)
+        ->setUser($viewer)
         ->setPontification($phame_post, $phame_title);
+
+      if (PhabricatorPolicyFilter::hasCapability(
+        $viewer,
+        $post,
+        PhabricatorPolicyCapability::CAN_EDIT)) {
+
+        $story->addAction(id(new PHUIIconView())
+          ->setHref($this->getApplicationURI('post/edit/'.$post->getID().'/'))
+          ->setIconFont('fa-pencil'));
+      }
 
       if ($post->getDatePublished()) {
         $story->setEpoch($post->getDatePublished());
       }
+
       $stories[] = $story;
+    }
+
+    if (empty($stories)) {
+      return id(new AphrontErrorView())
+        ->setSeverity(AphrontErrorView::SEVERITY_NODATA)
+        ->appendChild($nodata);
     }
 
     return $stories;
   }
 
-  public function buildApplicationMenu() {
+  protected function buildApplicationMenu() {
     return $this->renderSideNavFilterView()->getMenu();
   }
 
@@ -99,12 +113,12 @@ abstract class PhameController extends PhabricatorController {
       id(new PHUIListItemView())
         ->setName(pht('New Blog'))
         ->setHref($this->getApplicationURI('/blog/new'))
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setName(pht('New Post'))
         ->setHref($this->getApplicationURI('/post/new'))
-        ->setIcon('new'));
+        ->setIcon('fa-pencil'));
     return $crumbs;
   }
 }

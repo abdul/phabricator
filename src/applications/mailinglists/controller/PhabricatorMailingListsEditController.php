@@ -67,18 +67,11 @@ final class PhabricatorMailingListsEditController
           $list->save();
           return id(new AphrontRedirectResponse())
             ->setURI($this->getApplicationURI());
-        } catch (AphrontQueryDuplicateKeyException $ex) {
+        } catch (AphrontDuplicateKeyQueryException $ex) {
           $e_email = pht('Duplicate');
           $errors[] = pht('Another mailing list already uses that address.');
         }
       }
-    }
-
-    $error_view = null;
-    if ($errors) {
-      $error_view = id(new AphrontErrorView())
-        ->setTitle(pht('Form Errors'))
-        ->setErrors($errors);
     }
 
     $form = new AphrontFormView();
@@ -117,18 +110,14 @@ final class PhabricatorMailingListsEditController
           ->addCancelButton($this->getApplicationURI()));
 
     if ($list->getID()) {
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht('Edit Mailing List')));
+      $crumbs->addTextCrumb(pht('Edit Mailing List'));
     } else {
-      $crumbs->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName(pht('Create Mailing List')));
+      $crumbs->addTextCrumb(pht('Create Mailing List'));
     }
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText($page_title)
-      ->setFormError($error_view)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     return $this->buildApplicationPage(
@@ -138,7 +127,6 @@ final class PhabricatorMailingListsEditController
       ),
       array(
         'title' => $page_title,
-        'device' => true,
       ));
   }
 

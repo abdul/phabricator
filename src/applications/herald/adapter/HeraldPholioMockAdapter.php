@@ -1,12 +1,21 @@
 <?php
 
-/**
- * @group herald
- */
 final class HeraldPholioMockAdapter extends HeraldAdapter {
 
   private $mock;
   private $ccPHIDs = array();
+
+  public function getAdapterApplicationClass() {
+    return 'PhabricatorPholioApplication';
+  }
+
+  public function getAdapterContentDescription() {
+    return pht('React to mocks being created or updated.');
+  }
+
+  public function getObject() {
+    return $this->mock;
+  }
 
   public function setMock(PholioMock $mock) {
     $this->mock = $mock;
@@ -28,28 +37,47 @@ final class HeraldPholioMockAdapter extends HeraldAdapter {
     return pht('Pholio Mocks');
   }
 
+  public function supportsRuleType($rule_type) {
+    switch ($rule_type) {
+      case HeraldRuleTypeConfig::RULE_TYPE_GLOBAL:
+      case HeraldRuleTypeConfig::RULE_TYPE_PERSONAL:
+        return true;
+      case HeraldRuleTypeConfig::RULE_TYPE_OBJECT:
+      default:
+        return false;
+    }
+  }
+
   public function getFields() {
-    return array(
-      self::FIELD_TITLE,
-      self::FIELD_BODY,
-      self::FIELD_AUTHOR,
-      self::FIELD_CC,
-    );
+    return array_merge(
+      array(
+        self::FIELD_TITLE,
+        self::FIELD_BODY,
+        self::FIELD_AUTHOR,
+        self::FIELD_CC,
+        self::FIELD_PROJECTS,
+        self::FIELD_IS_NEW_OBJECT,
+      ),
+      parent::getFields());
   }
 
   public function getActions($rule_type) {
     switch ($rule_type) {
       case HeraldRuleTypeConfig::RULE_TYPE_GLOBAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
       case HeraldRuleTypeConfig::RULE_TYPE_PERSONAL:
-        return array(
-          self::ACTION_ADD_CC,
-          self::ACTION_FLAG,
-          self::ACTION_NOTHING,
-        );
+        return array_merge(
+          array(
+            self::ACTION_ADD_CC,
+            self::ACTION_FLAG,
+            self::ACTION_NOTHING,
+          ),
+          parent::getActions($rule_type));
     }
   }
 
@@ -71,7 +99,11 @@ final class HeraldPholioMockAdapter extends HeraldAdapter {
         return $this->getMock()->getAuthorPHID();
       case self::FIELD_CC:
         return PhabricatorSubscribersQuery::loadSubscribersForPHID(
-                $this->getMock()->getPHID());
+          $this->getMock()->getPHID());
+      case self::FIELD_PROJECTS:
+        return PhabricatorEdgeQuery::loadDestinationPHIDs(
+          $this->getMock()->getPHID(),
+          PhabricatorProjectObjectHasProjectEdgeType::EDGECONST);
     }
 
     return parent::getHeraldField($field);
@@ -91,11 +123,9 @@ final class HeraldPholioMockAdapter extends HeraldAdapter {
             pht('Great success at doing nothing.'));
           break;
         case self::ACTION_ADD_CC:
-          $add_cc = array();
           foreach ($effect->getTarget() as $phid) {
-            $add_cc[$phid] = true;
+            $this->ccPHIDs[] = $phid;
           }
-          $this->setCcPHIDs(array_keys($add_cc));
           $result[] = new HeraldApplyTranscript(
             $effect,
             true,
@@ -107,9 +137,18 @@ final class HeraldPholioMockAdapter extends HeraldAdapter {
             $this->getMock()->getPHID());
           break;
         default:
-          throw new Exception("No rules to handle action '{$action}'.");
+          $custom_result = parent::handleCustomHeraldEffect($effect);
+          if ($custom_result === null) {
+            throw new Exception(pht(
+              "No rules to handle action '%s'.",
+              $action));
+          }
+
+          $result[] = $custom_result;
+          break;
       }
     }
     return $result;
   }
+
 }

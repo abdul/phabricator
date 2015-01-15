@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group conpherence
- */
 final class ConpherenceReplyHandler extends PhabricatorMailReplyHandler {
 
   private $mailAddedParticipantPHIDs;
@@ -17,7 +14,7 @@ final class ConpherenceReplyHandler extends PhabricatorMailReplyHandler {
 
   public function validateMailReceiver($mail_receiver) {
     if (!($mail_receiver instanceof ConpherenceThread)) {
-      throw new Exception("Mail receiver is not a ConpherenceThread!");
+      throw new Exception('Mail receiver is not a ConpherenceThread!');
     }
   }
 
@@ -46,7 +43,7 @@ final class ConpherenceReplyHandler extends PhabricatorMailReplyHandler {
         ->attachParticipants(array())
         ->attachFilePHIDs(array());
     } else {
-      $edge_type = PhabricatorEdgeConfig::TYPE_OBJECT_HAS_FILE;
+      $edge_type = PhabricatorObjectHasFileEdgeType::EDGECONST;
       $file_phids = PhabricatorEdgeQuery::loadDestinationPHIDs(
         $conpherence->getPHID(),
         $edge_type);
@@ -69,7 +66,6 @@ final class ConpherenceReplyHandler extends PhabricatorMailReplyHandler {
       ->setParentMessageID($mail->getMessageID());
 
     $body = $mail->getCleanTextBody();
-    $body = trim($body);
     $file_phids = $mail->getAttachments();
     $body = $this->enhanceBodyWithAttachments(
       $body,
@@ -86,6 +82,7 @@ final class ConpherenceReplyHandler extends PhabricatorMailReplyHandler {
     $xactions = array_merge(
       $xactions,
       $editor->generateTransactionsFromText(
+        $user,
         $conpherence,
         $body));
 

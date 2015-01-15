@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group pholio
- */
 final class PholioImageQuery
   extends PhabricatorCursorPagedPolicyAwareQuery {
 
@@ -103,30 +100,6 @@ final class PholioImageQuery
   protected function willFilterPage(array $images) {
     assert_instances_of($images, 'PholioImage');
 
-    $file_phids = mpull($images, 'getFilePHID');
-    $all_files = mpull(id(new PhabricatorFile())->loadAllWhere(
-      'phid IN (%Ls)',
-      $file_phids), null, 'getPHID');
-
-    if ($this->needInlineComments) {
-      $all_inline_comments = id(new PholioTransactionComment())
-        ->loadAllWhere('imageid IN (%Ld)',
-          mpull($images, 'getID'));
-      $all_inline_comments = mgroup($all_inline_comments, 'getImageID');
-    }
-
-    foreach ($images as $image) {
-      $file = idx($all_files, $image->getFilePHID());
-      if (!$file) {
-        $file = PhabricatorFile::loadBuiltin($this->getViewer(), 'missing.png');
-      }
-      $image->attachFile($file);
-      if ($this->needInlineComments) {
-        $inlines = idx($all_inline_comments, $image->getID(), array());
-        $image->attachInlineComments($inlines);
-      }
-    }
-
     if ($this->getMockCache()) {
       $mocks = $this->getMockCache();
     } else {
@@ -149,6 +122,44 @@ final class PholioImageQuery
     }
 
     return $images;
+  }
+
+  protected function didFilterPage(array $images) {
+    assert_instances_of($images, 'PholioImage');
+
+    $file_phids = mpull($images, 'getFilePHID');
+
+    $all_files = id(new PhabricatorFileQuery())
+      ->setParentQuery($this)
+      ->setViewer($this->getViewer())
+      ->withPHIDs($file_phids)
+      ->execute();
+    $all_files = mpull($all_files, null, 'getPHID');
+
+    if ($this->needInlineComments) {
+      $all_inline_comments = id(new PholioTransactionComment())
+        ->loadAllWhere('imageid IN (%Ld)',
+          mpull($images, 'getID'));
+      $all_inline_comments = mgroup($all_inline_comments, 'getImageID');
+    }
+
+    foreach ($images as $image) {
+      $file = idx($all_files, $image->getFilePHID());
+      if (!$file) {
+        $file = PhabricatorFile::loadBuiltin($this->getViewer(), 'missing.png');
+      }
+      $image->attachFile($file);
+      if ($this->needInlineComments) {
+        $inlines = idx($all_inline_comments, $image->getID(), array());
+        $image->attachInlineComments($inlines);
+      }
+    }
+
+    return $images;
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorPholioApplication';
   }
 
 }

@@ -20,6 +20,11 @@ final class PhabricatorFeedDetailController extends PhabricatorFeedController {
       return new Aphront404Response();
     }
 
+    if ($request->getStr('text')) {
+      $text = $story->renderText();
+      return id(new AphrontPlainTextResponse())->setContent($text);
+    }
+
     $feed = array($story);
     $builder = new PhabricatorFeedBuilder($feed);
     $builder->setUser($user);
@@ -27,15 +32,10 @@ final class PhabricatorFeedDetailController extends PhabricatorFeedController {
 
     $title = pht('Story');
 
-    $feed_view = hsprintf(
-      '<div class="phabricator-feed-frame">%s</div>',
-      $feed_view);
+    $feed_view = phutil_tag_div('phabricator-feed-frame', $feed_view);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName($title));
-
+    $crumbs->addTextCrumb($title);
 
     return $this->buildApplicationPage(
       array(
@@ -44,7 +44,6 @@ final class PhabricatorFeedDetailController extends PhabricatorFeedController {
       ),
       array(
         'title' => $title,
-        'device' => true,
       ));
   }
 

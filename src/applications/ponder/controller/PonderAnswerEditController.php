@@ -31,9 +31,8 @@ final class PonderAnswerEditController extends PonderController {
 
     $question = $answer->getQuestion();
     $qid = $question->getID();
-    $aid = $answer->getID();
 
-    $question_uri = "/Q{$qid}#A{$aid}";
+    $answer_uri = $answer->getURI();
 
     $errors = array();
     if ($request->isFormPost()) {
@@ -58,12 +57,8 @@ final class PonderAnswerEditController extends PonderController {
         $editor->applyTransactions($answer, $xactions);
 
         return id(new AphrontRedirectResponse())
-          ->setURI($question_uri);
+          ->setURI($answer_uri);
       }
-    }
-
-    if ($errors) {
-      $errors = id(new AphrontErrorView())->setErrors($errors);
     }
 
     $answer_content_id = celerity_generate_unique_node_id();
@@ -76,6 +71,7 @@ final class PonderAnswerEditController extends PonderController {
           ->setValue($question->getTitle()))
       ->appendChild(
         id(new PhabricatorRemarkupControl())
+          ->setUser($viewer)
           ->setLabel(pht('Answer'))
           ->setName('content')
           ->setID($answer_content_id)
@@ -84,20 +80,15 @@ final class PonderAnswerEditController extends PonderController {
       ->appendChild(
         id(new AphrontFormSubmitControl())
           ->setValue(pht('Update Answer'))
-          ->addCancelButton($question_uri));
+          ->addCancelButton($answer_uri));
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName("Q{$qid}")
-        ->setHref($question_uri));
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Edit Answer')));
+    $crumbs->addTextCrumb("Q{$qid}", $answer_uri);
+    $crumbs->addTextCrumb(pht('Edit Answer'));
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Edit Answer'))
-      ->setFormError($errors)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     $preview = id(new PHUIRemarkupPreviewPanel())
@@ -113,7 +104,6 @@ final class PonderAnswerEditController extends PonderController {
       ),
       array(
         'title' => pht('Edit Answer'),
-        'device' => true,
       ));
 
   }

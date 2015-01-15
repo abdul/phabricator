@@ -78,30 +78,12 @@ final class DifferentialDoorkeeperRevisionFeedStoryPublisher
   }
 
   public function isObjectClosed($object) {
-    switch ($object->getStatus()) {
-      case ArcanistDifferentialRevisionStatus::CLOSED:
-      case ArcanistDifferentialRevisionStatus::ABANDONED:
-        return true;
-      default:
-        return false;
-    }
+    return $object->isClosed();
   }
 
   public function getResponsibilityTitle($object) {
     $prefix = $this->getTitlePrefix($object);
     return pht('%s Review Request', $prefix);
-  }
-
-  public function getStoryText($object) {
-    $implied_context = $this->getRenderWithImpliedContext();
-
-    $story = $this->getFeedStory();
-    if ($story instanceof PhabricatorFeedStoryDifferential) {
-      $text = $story->renderForAsanaBridge($implied_context);
-    } else {
-      $text = $story->renderText();
-    }
-    return $text;
   }
 
   private function getTitlePrefix(DifferentialRevision $revision) {

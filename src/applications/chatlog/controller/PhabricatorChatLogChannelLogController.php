@@ -5,6 +5,10 @@ final class PhabricatorChatLogChannelLogController
 
   private $channelID;
 
+  public function shouldAllowPublic() {
+    return true;
+  }
+
   public function willProcessRequest(array $data) {
     $this->channelID = $data['channelID'];
   }
@@ -104,7 +108,9 @@ final class PhabricatorChatLogChannelLogController
     $out = array();
     foreach ($blocks as $block) {
       $author = $block['author'];
-      $author = phutil_utf8_shorten($author, 18);
+      $author = id(new PhutilUTF8StringTruncator())
+        ->setMaximumGlyphs(18)
+        ->truncateString($author);
       $author = phutil_tag('td', array('class' => 'author'), $author);
 
       $href = $uri->alter('at', $block['id']);
@@ -114,7 +120,7 @@ final class PhabricatorChatLogChannelLogController
         'a',
           array(
             'href' => $href,
-            'class' => 'timestamp'
+            'class' => 'timestamp',
           ),
         $timestamp);
 
@@ -123,11 +129,12 @@ final class PhabricatorChatLogChannelLogController
       $message = phutil_tag(
         'td',
           array(
-            'class' => 'message'
+            'class' => 'message',
           ),
           array(
             $timestamp,
-            $message));
+            $message,
+          ));
 
       $out[] = phutil_tag(
         'tr',
@@ -136,15 +143,55 @@ final class PhabricatorChatLogChannelLogController
         ),
         array(
           $author,
-          $message));
+          $message,
+        ));
     }
+
+    $links = array();
+
+    $first_uri = $pager->getFirstPageURI();
+    if ($first_uri) {
+      $links[] = phutil_tag(
+        'a',
+        array(
+          'href' => $first_uri,
+        ),
+        "\xC2\xAB ".pht('Newest'));
+    }
+
+    $prev_uri = $pager->getPrevPageURI();
+    if ($prev_uri) {
+      $links[] = phutil_tag(
+        'a',
+        array(
+          'href' => $prev_uri,
+        ),
+        "\xE2\x80\xB9 ".pht('Newer'));
+    }
+
+    $next_uri = $pager->getNextPageURI();
+    if ($next_uri) {
+      $links[] = phutil_tag(
+        'a',
+        array(
+          'href' => $next_uri,
+        ),
+        pht('Older')." \xE2\x80\xBA");
+    }
+
+    $pager_top = phutil_tag(
+      'div',
+      array('class' => 'phabricator-chat-log-pager-top'),
+      $links);
+
+    $pager_bottom = phutil_tag(
+      'div',
+      array('class' => 'phabricator-chat-log-pager-bottom'),
+      $links);
 
     $crumbs = $this
       ->buildApplicationCrumbs()
-      ->addCrumb(
-        id(new PhabricatorCrumbView())
-          ->setName($channel->getChannelName())
-          ->setHref($uri));
+      ->addTextCrumb($channel->getChannelName(), $uri);
 
     $form = id(new AphrontFormView())
       ->setUser($user)
@@ -165,34 +212,58 @@ final class PhabricatorChatLogChannelLogController
     $table = phutil_tag(
       'table',
         array(
-          'class' => 'phabricator-chat-log'
+          'class' => 'phabricator-chat-log',
         ),
       $out);
 
     $log = phutil_tag(
       'div',
         array(
-          'class' => 'phabricator-chat-log-panel'
+          'class' => 'phabricator-chat-log-panel',
         ),
         $table);
+
+    $jump_link = phutil_tag(
+      'a',
+        array(
+          'href' => '#latest',
+        ),
+        pht('Jump to Bottom')." \xE2\x96\xBE");
+
+    $jump = phutil_tag(
+      'div',
+        array(
+          'class' => 'phabricator-chat-log-jump',
+        ),
+        $jump_link);
+
+    $jump_target = phutil_tag(
+      'div',
+        array(
+          'id' => 'latest',
+        ));
 
     $content = phutil_tag(
       'div',
         array(
-          'class' => 'phabricator-chat-log-wrap'
+          'class' => 'phabricator-chat-log-wrap',
         ),
-        $log);
+        array(
+          $jump,
+          $pager_top,
+          $log,
+          $jump_target,
+          $pager_bottom,
+        ));
 
     return $this->buildApplicationPage(
       array(
         $crumbs,
         $filter,
         $content,
-        $pager,
       ),
       array(
         'title' => pht('Channel Log'),
-        'device' => true,
       ));
   }
 

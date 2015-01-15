@@ -77,9 +77,14 @@ SVN repositories.
 = Installing Arcanist =
 
 Arcanist is meant to be installed on your local machine or development server --
-whatever machine you're editing code on. It runs on Linux,
-Mac OS X (see @{article:Arcanist User Guide: Mac OS X}), and
-Windows (see @{article:Arcanist User Guide: Windows}).
+whatever machine you're editing code on. It runs on:
+
+  - Linux;
+  - Other operating systems which are pretty similar to Linux, or which
+    Linux is pretty similar to;
+  - FreeBSD, a fine operating system held in great esteem by many;
+  - Mac OS X (see @{article:Arcanist User Guide: Mac OS X}); and
+  - Windows (see @{article:Arcanist User Guide: Windows}).
 
 Arcanist is written in PHP, so you need to install the PHP CLI first if you
 don't already have it. Arcanist should run on PHP 5.2 and newer. If you don't
@@ -87,8 +92,8 @@ have PHP installed, you can download it from <http://www.php.net/>.
 
 To install Arcanist, pick an install directory and clone the code from GitHub:
 
-  some_install_path/ $ git clone git://github.com/facebook/libphutil.git
-  some_install_path/ $ git clone git://github.com/facebook/arcanist.git
+  some_install_path/ $ git clone https://github.com/phacility/libphutil.git
+  some_install_path/ $ git clone https://github.com/phacility/arcanist.git
 
 This should leave you with a directory structure like this
 
@@ -153,11 +158,11 @@ several sources:
   # User can specify the settings in `~/.arcrc` (JSON) through the `config` key.
     This file can be modified also by `arc set-config --global`.
   # Machine can specify the settings with `/etc/arcconfig` (JSON). On Windows,
-    the file path is 'C:\ProgramData\Phabricator\Arcanist\config`.
+    the file path is `C:\ProgramData\Phabricator\Arcanist\config`.
 
 The first place where the setting is defined wins.
 
-Existing settings can be printed with `arc set-config --show`.
+Existing settings can be printed with `arc get-config`.
 
 == Next Steps ==
 

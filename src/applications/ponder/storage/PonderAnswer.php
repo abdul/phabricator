@@ -2,11 +2,14 @@
 
 final class PonderAnswer extends PonderDAO
   implements
+    PhabricatorApplicationTransactionInterface,
     PhabricatorMarkupInterface,
     PonderVotableInterface,
     PhabricatorPolicyInterface,
+    PhabricatorFlaggableInterface,
     PhabricatorSubscribableInterface,
-    PhabricatorTokenReceiverInterface {
+    PhabricatorTokenReceiverInterface,
+    PhabricatorDestructibleInterface {
 
   const MARKUP_FIELD_CONTENT = 'markup:content';
 
@@ -23,11 +26,6 @@ final class PonderAnswer extends PonderDAO
 
   private $userVotes = array();
 
-  // TODO: Get rid of this method.
-  public function setQuestion($question) {
-    return $this->attachQuestion($question);
-  }
-
   public function attachQuestion(PonderQuestion $question = null) {
     $this->question = $question;
     return $this;
@@ -35,6 +33,10 @@ final class PonderAnswer extends PonderDAO
 
   public function getQuestion() {
     return $this->assertAttached($this->question);
+  }
+
+  public function getURI() {
+    return '/Q'.$this->getQuestionID().'#A'.$this->getID();
   }
 
   public function setUserVote($vote) {
@@ -63,15 +65,39 @@ final class PonderAnswer extends PonderDAO
     return $this->comments;
   }
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'voteCount' => 'sint32',
+        'content' => 'text',
+
+        // T6203/NULLABILITY
+        // This should always exist.
+        'contentSource' => 'text?',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'key_oneanswerperquestion' => array(
+          'columns' => array('questionID', 'authorPHID'),
+          'unique' => true,
+        ),
+        'questionID' => array(
+          'columns' => array('questionID'),
+        ),
+        'authorPHID' => array(
+          'columns' => array('authorPHID'),
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
-    return PhabricatorPHID::generateNewPHID(
-      PonderPHIDTypeAnswer::TYPECONST);
+    return PhabricatorPHID::generateNewPHID(PonderAnswerPHIDType::TYPECONST);
   }
 
   public function setContentSource(PhabricatorContentSource $content_source) {
@@ -86,6 +112,30 @@ final class PonderAnswer extends PonderDAO
   public function getMarkupField() {
     return self::MARKUP_FIELD_CONTENT;
   }
+
+
+/* -(  PhabricatorApplicationTransactionInterface  )------------------------- */
+
+
+  public function getApplicationTransactionEditor() {
+    return new PonderAnswerEditor();
+  }
+
+  public function getApplicationTransactionObject() {
+    return $this;
+  }
+
+  public function getApplicationTransactionTemplate() {
+    return new PonderAnswerTransaction();
+  }
+
+  public function willRenderTimeline(
+    PhabricatorApplicationTransactionView $timeline,
+    AphrontRequest $request) {
+
+    return $timeline;
+  }
+
 
   // Markup interface
 
@@ -116,7 +166,7 @@ final class PonderAnswer extends PonderDAO
 
   // votable interface
   public function getUserVoteEdgeType() {
-    return PhabricatorEdgeConfig::TYPE_VOTING_USER_HAS_ANSWER;
+    return PonderVotingUserHasAnswerEdgeType::EDGECONST;
   }
 
   public function getVotablePHID() {
@@ -146,12 +196,28 @@ final class PonderAnswer extends PonderDAO
   public function hasAutomaticCapability($capability, PhabricatorUser $viewer) {
     switch ($capability) {
       case PhabricatorPolicyCapability::CAN_VIEW:
+        if ($this->getAuthorPHID() == $viewer->getPHID()) {
+          return true;
+        }
         return $this->getQuestion()->hasAutomaticCapability(
           $capability,
           $viewer);
       case PhabricatorPolicyCapability::CAN_EDIT:
         return ($this->getAuthorPHID() == $viewer->getPHID());
     }
+  }
+
+
+  public function describeAutomaticCapability($capability) {
+    $out = array();
+    $out[] = pht('The author of an answer can always view and edit it.');
+    switch ($capability) {
+      case PhabricatorPolicyCapability::CAN_VIEW:
+        $out[] = pht(
+          'The user who asks a question can always view the answers.');
+        break;
+    }
+    return $out;
   }
 
 
@@ -172,5 +238,24 @@ final class PonderAnswer extends PonderDAO
     return ($phid == $this->getAuthorPHID());
   }
 
+  public function shouldShowSubscribersProperty() {
+    return true;
+  }
+
+  public function shouldAllowSubscription($phid) {
+    return true;
+  }
+
+
+/* -(  PhabricatorDestructibleInterface  )----------------------------------- */
+
+
+  public function destroyObjectPermanently(
+    PhabricatorDestructionEngine $engine) {
+
+    $this->openTransaction();
+      $this->delete();
+    $this->saveTransaction();
+  }
 
 }

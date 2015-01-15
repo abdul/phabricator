@@ -43,7 +43,7 @@ final class PhabricatorXHPASTViewRunController
         id(new AphrontFormSubmitControl())
           ->setValue('Parse'));
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Generate XHP AST'))
       ->setForm($form);
 
@@ -51,7 +51,6 @@ final class PhabricatorXHPASTViewRunController
       $form_box,
       array(
         'title' => pht('XHPAST View'),
-        'device' => true,
       ));
   }
 

@@ -14,6 +14,7 @@ final class PhabricatorFeedConfigOptions
   public function getOptions() {
     return array(
       $this->newOption('feed.public', 'bool', false)
+        ->setLocked(true)
         ->setBoolOptions(
           array(
             pht('Allow anyone to view the feed'),
@@ -30,6 +31,7 @@ final class PhabricatorFeedConfigOptions
             "NOTE: You must also set `policy.allow-public` to true for this ".
             "setting to work properly.")),
       $this->newOption('feed.http-hooks', 'list<string>', array())
+        ->setLocked(true)
         ->setSummary(pht('POST notifications of feed events.'))
         ->setDescription(
           pht(
@@ -38,7 +40,8 @@ final class PhabricatorFeedConfigOptions
             "story data to the uri. Daemons automagically retry failures 100 ".
             "times, waiting \$fail_count * 60s between each subsequent ".
             "failure. Be sure to keep the daemon console (/daemon/) open ".
-            "while developing and testing your end points.\n\n".
+            "while developing and testing your end points. You may need to".
+            "restart your daemons to start sending http requests.\n\n".
             "NOTE: URIs are not validated, the URI must return http status ".
             "200 within 30 seconds, and no permission checks are performed.")),
     );

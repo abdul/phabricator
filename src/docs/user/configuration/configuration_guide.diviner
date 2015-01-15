@@ -33,8 +33,7 @@ is correctly configured.
 NOTE: The domain must contain a dot ('.'), i.e. not be just a bare name like
 'http://example/'. Some web browsers will not set cookies otherwise.
 
-Now, either create a VirtualHost entry (to put Phabricator on a subdomain)
-or edit the Directory entry for the DocumentRoot. It should look something like
+Now create a VirtualHost entry for Phabricator. It should look something like
 this:
 
   name=httpd.conf
@@ -55,11 +54,22 @@ this:
   </VirtualHost>
 
 If Apache isn't currently configured to serve documents out of the directory
-where you put Phabricator, you may also need to add a section like this:
+where you put Phabricator, you may also need to add `<Directory />` section. The
+syntax for this section depends on which version of Apache you're running.
+(If you don't know, you can usually figure this out by running `httpd -v`.)
+For Apache versions older than 2.4, use this:
 
+  name="Apache Older Than 2.4"
   <Directory "/path/to/phabricator/webroot">
     Order allow,deny
     Allow from all
+  </Directory>
+
+For Apache versions 2.4 and newer, use this:
+
+  name="Apache 2.4 and Newer"
+  <Directory "/path/to/phabricator/webroot">
+    Require all granted
   </Directory>
 
 After making your edits, restart Apache, then continue to "Setup" below.
@@ -74,18 +84,15 @@ For nginx, use a configuration like this:
   name=nginx.conf
   server {
     server_name phabricator.example.com;
-
-    root      /path/to/phabricator/webroot;
-    try_files $uri $uri/ /index.php;
+    root        /path/to/phabricator/webroot;
 
     location / {
-      index   index.php;
+      index index.php;
+      rewrite ^/(.*)$ /index.php?__path__=/$1 last;
+    }
 
-      if ( !-f $request_filename )
-      {
-        rewrite ^/(.*)$ /index.php?__path__=/$1 last;
-        break;
-      }
+    location = /favicon.ico {
+      try_files $uri =204;
     }
 
     location /index.php {
@@ -186,6 +193,9 @@ Continue by:
     @{article:Configuring Accounts and Registration}; or
   - understanding advanced configuration topics with
     @{article:Configuration User Guide: Advanced Configuration}; or
+  - configuring a preamble script to set up the environment properly behind a
+    load balancer, or adjust rate limiting with
+    @{article:Configuring a Preamble Script}; or
   - configuring where uploaded files and attachments will be stored with
     @{article:Configuring File Storage}; or
   - configuring Phabricator so it can send mail with
@@ -193,5 +203,8 @@ Continue by:
   - configuring inbound mail with @{article:Configuring Inbound Email}; or
   - importing repositories with @{article:Diffusion User Guide}; or
   - learning about daemons with @{article:Managing Daemons with phd}; or
-  - configuring backups with @{article:Configuring Backups}; or
+  - learning about notification with
+    @{article:Notifications User Guide: Setup and Configuration}; or
+  - configuring backups with
+    @{article:Configuring Backups and Performing Migrations}; or
   - contributing to Phabricator with @{article:Contributor Introduction}.

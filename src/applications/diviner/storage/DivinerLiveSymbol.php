@@ -3,7 +3,6 @@
 final class DivinerLiveSymbol extends DivinerDAO
   implements PhabricatorPolicyInterface, PhabricatorMarkupInterface {
 
-  protected $phid;
   protected $bookPHID;
   protected $context;
   protected $type;
@@ -14,6 +13,7 @@ final class DivinerLiveSymbol extends DivinerDAO
   protected $nodeHash;
 
   protected $title;
+  protected $titleSlugHash;
   protected $groupName;
   protected $summary;
   protected $isDocumentable = 0;
@@ -23,16 +23,63 @@ final class DivinerLiveSymbol extends DivinerDAO
   private $extends = self::ATTACHABLE;
   private $children = self::ATTACHABLE;
 
-  public function getConfiguration() {
+  protected function getConfiguration() {
     return array(
       self::CONFIG_AUX_PHID => true,
       self::CONFIG_TIMESTAMPS => false,
+      self::CONFIG_COLUMN_SCHEMA => array(
+        'context' => 'text255?',
+        'type' => 'text32',
+        'name' => 'text255',
+        'atomIndex' => 'uint32',
+        'identityHash' => 'bytes12',
+        'graphHash' => 'text64?',
+        'title' => 'text?',
+        'titleSlugHash' => 'bytes12?',
+        'groupName' => 'text255?',
+        'summary' => 'text?',
+        'isDocumentable' => 'bool',
+        'nodeHash' => 'text64?',
+      ),
+      self::CONFIG_KEY_SCHEMA => array(
+        'key_phid' => null,
+        'identityHash' => array(
+          'columns' => array('identityHash'),
+          'unique' => true,
+        ),
+        'phid' => array(
+          'columns' => array('phid'),
+          'unique' => true,
+        ),
+        'graphHash' => array(
+          'columns' => array('graphHash'),
+          'unique' => true,
+        ),
+        'nodeHash' => array(
+          'columns' => array('nodeHash'),
+          'unique' => true,
+        ),
+        'bookPHID' => array(
+          'columns' => array(
+            'bookPHID',
+            'type',
+            'name(64)',
+            'context(64)',
+            'atomIndex',
+          ),
+        ),
+        'name' => array(
+          'columns' => array('name(64)'),
+        ),
+        'key_slug' => array(
+          'columns' => array('titleSlugHash'),
+        ),
+      ),
     ) + parent::getConfiguration();
   }
 
   public function generatePHID() {
-    return PhabricatorPHID::generateNewPHID(
-      DivinerPHIDTypeAtom::TYPECONST);
+    return PhabricatorPHID::generateNewPHID(DivinerAtomPHIDType::TYPECONST);
   }
 
   public function getBook() {
@@ -74,7 +121,12 @@ final class DivinerLiveSymbol extends DivinerDAO
   }
 
   public function getSortKey() {
-    return $this->getTitle();
+    // Sort articles before other types of content. Then, sort atoms in a
+    // case-insensitive way.
+    return sprintf(
+      '%c:%s',
+      ($this->getType() == DivinerAtom::TYPE_ARTICLE ? '0' : '1'),
+      phutil_utf8_strtolower($this->getTitle()));
   }
 
   public function save() {
@@ -104,6 +156,18 @@ final class DivinerLiveSymbol extends DivinerDAO
       $title = $this->getName();
     }
     return $title;
+  }
+
+  public function setTitle($value) {
+    $this->writeField('title', $value);
+    if (strlen($value)) {
+      $slug = DivinerAtomRef::normalizeTitleString($value);
+      $hash = PhabricatorHash::digestForIndex($slug);
+      $this->titleSlugHash = $hash;
+    } else {
+      $this->titleSlugHash = null;
+    }
+    return $this;
   }
 
   public function attachExtends(array $extends) {
@@ -143,6 +207,10 @@ final class DivinerLiveSymbol extends DivinerDAO
     return $this->getBook()->hasAutomaticCapability($capability, $viewer);
   }
 
+  public function describeAutomaticCapability($capability) {
+    return pht('Atoms inherit the policies of the books they are part of.');
+  }
+
 
 /* -(  Markup Interface  )--------------------------------------------------- */
 
@@ -171,7 +239,7 @@ final class DivinerLiveSymbol extends DivinerDAO
 
 
   public function shouldUseMarkupCache($field) {
-    return false;
+    return true;
   }
 
 }

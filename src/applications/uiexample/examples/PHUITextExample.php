@@ -54,7 +54,8 @@ final class PHUITextExample extends PhabricatorUIExample {
           ->addClass(PHUI::TEXT_WHITE),
         id(new PHUITextView())
           ->setText($color9)
-          ->addClass(PHUI::TEXT_BLACK));
+          ->addClass(PHUI::TEXT_BLACK),
+      );
 
     $content2 =
       array(
@@ -66,14 +67,15 @@ final class PHUITextExample extends PhabricatorUIExample {
           ->addClass(PHUI::TEXT_UPPERCASE),
         id(new PHUITextView())
           ->setText($text3)
-          ->addClass(PHUI::TEXT_STRIKE));
+          ->addClass(PHUI::TEXT_STRIKE),
+      );
 
     $layout1 = id(new PHUIBoxView())
       ->appendChild($content)
-            ->setShadow(true)
+            ->setBorder(true)
       ->addPadding(PHUI::PADDING_MEDIUM);
 
-    $head1 = id(new PhabricatorHeaderView())
+    $head1 = id(new PHUIHeaderView())
       ->setHeader(pht('Basic Colors'));
 
     $wrap1 = id(new PHUIBoxView())
@@ -82,10 +84,10 @@ final class PHUITextExample extends PhabricatorUIExample {
 
     $layout2 = id(new PHUIBoxView())
       ->appendChild($content2)
-      ->setShadow(true)
+      ->setBorder(true)
       ->addPadding(PHUI::PADDING_MEDIUM);
 
-    $head2 = id(new PhabricatorHeaderView())
+    $head2 = id(new PHUIHeaderView())
       ->setHeader(pht('Basic Transforms'));
 
     $wrap2 = id(new PHUIBoxView())
@@ -99,7 +101,7 @@ final class PHUITextExample extends PhabricatorUIExample {
           $head1,
           $wrap1,
           $head2,
-          $wrap2
+          $wrap2,
         ));
-        }
+  }
 }

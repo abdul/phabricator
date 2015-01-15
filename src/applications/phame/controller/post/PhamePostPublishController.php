@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @group phame
- */
 final class PhamePostPublishController extends PhameController {
 
   private $id;
@@ -46,15 +43,12 @@ final class PhamePostPublishController extends PhameController {
 
     $frame = $this->renderPreviewFrame($post);
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Preview Post'))
       ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Preview'))
-        ->setHref($view_uri));
+    $crumbs->addTextCrumb(pht('Preview'), $view_uri);
 
     $nav = $this->renderSideNavFilterView(null);
     $nav->appendChild(
@@ -68,7 +62,6 @@ final class PhamePostPublishController extends PhameController {
       $nav,
       array(
         'title'   => pht('Preview Post'),
-        'device'  => true,
       ));
   }
 
@@ -90,4 +83,5 @@ final class PhamePostPublishController extends PhameController {
         ),
         ''));
   }
+
 }

@@ -6,12 +6,13 @@ final class DiffusionBranchTableView extends DiffusionView {
   private $commits = array();
 
   public function setBranches(array $branches) {
-    assert_instances_of($branches, 'DiffusionBranchInformation');
+    assert_instances_of($branches, 'DiffusionRepositoryRef');
     $this->branches = $branches;
     return $this;
   }
 
   public function setCommits(array $commits) {
+    assert_instances_of($commits, 'PhabricatorRepositoryCommit');
     $this->commits = mpull($commits, null, 'getCommitIdentifier');
     return $this;
   }
@@ -19,21 +20,60 @@ final class DiffusionBranchTableView extends DiffusionView {
   public function render() {
     $drequest = $this->getDiffusionRequest();
     $current_branch = $drequest->getBranch();
+    $repository = $drequest->getRepository();
+
+    Javelin::initBehavior('phabricator-tooltips');
+
+    $doc_href = PhabricatorEnv::getDoclink('Diffusion User Guide: Autoclose');
 
     $rows = array();
     $rowc = array();
     foreach ($this->branches as $branch) {
-      $commit = idx($this->commits, $branch->getHeadCommitIdentifier());
+      $commit = idx($this->commits, $branch->getCommitIdentifier());
       if ($commit) {
-        $details = $commit->getCommitData()->getCommitMessage();
-        $details = idx(explode("\n", $details), 0);
-        $details = substr($details, 0, 80);
-
+        $details = $commit->getSummary();
         $datetime = phabricator_datetime($commit->getEpoch(), $this->user);
       } else {
         $datetime = null;
         $details = null;
       }
+
+      switch ($repository->shouldSkipAutocloseBranch($branch->getShortName())) {
+        case PhabricatorRepository::BECAUSE_REPOSITORY_IMPORTING:
+          $icon = 'fa-times bluegrey';
+          $tip = pht('Repository Importing');
+          break;
+        case PhabricatorRepository::BECAUSE_AUTOCLOSE_DISABLED:
+          $icon = 'fa-times bluegrey';
+          $tip = pht('Repository Autoclose Disabled');
+          break;
+        case PhabricatorRepository::BECAUSE_BRANCH_UNTRACKED:
+          $icon = 'fa-times bluegrey';
+          $tip = pht('Branch Untracked');
+          break;
+        case PhabricatorRepository::BECAUSE_BRANCH_NOT_AUTOCLOSE:
+          $icon = 'fa-times bluegrey';
+          $tip = pht('Branch Autoclose Disabled');
+          break;
+        case null:
+          $icon = 'fa-check bluegrey';
+          $tip = pht('Autoclose Enabled');
+          break;
+        default:
+          $icon = 'fa-question';
+          $tip = pht('Status Unknown');
+          break;
+      }
+
+      $status_icon = id(new PHUIIconView())
+        ->setIconFont($icon)
+        ->addSigil('has-tooltip')
+        ->setHref($doc_href)
+        ->setMetadata(
+          array(
+            'tip' => $tip,
+            'size' => 200,
+          ));
 
       $rows[] = array(
         phutil_tag(
@@ -42,8 +82,8 @@ final class DiffusionBranchTableView extends DiffusionView {
             'href' => $drequest->generateURI(
               array(
                 'action' => 'history',
-                'branch' => $branch->getName(),
-              ))
+                'branch' => $branch->getShortName(),
+              )),
           ),
           pht('History')),
         phutil_tag(
@@ -52,18 +92,18 @@ final class DiffusionBranchTableView extends DiffusionView {
             'href' => $drequest->generateURI(
               array(
                 'action' => 'browse',
-                'branch' => $branch->getName(),
+                'branch' => $branch->getShortName(),
               )),
           ),
-          $branch->getName()),
+          $branch->getShortName()),
         self::linkCommit(
           $drequest->getRepository(),
-          $branch->getHeadCommitIdentifier()),
+          $branch->getCommitIdentifier()),
+        $status_icon,
         $datetime,
         AphrontTableView::renderSingleDisplayLine($details),
-        // TODO: etc etc
       );
-      if ($branch->getName() == $current_branch) {
+      if ($branch->getShortName() == $current_branch) {
         $rowc[] = 'highlighted';
       } else {
         $rowc[] = null;
@@ -76,6 +116,7 @@ final class DiffusionBranchTableView extends DiffusionView {
         pht('History'),
         pht('Branch'),
         pht('Head'),
+        pht(''),
         pht('Modified'),
         pht('Details'),
       ));
@@ -83,6 +124,7 @@ final class DiffusionBranchTableView extends DiffusionView {
       array(
         '',
         'pri',
+        '',
         '',
         '',
         'wide',

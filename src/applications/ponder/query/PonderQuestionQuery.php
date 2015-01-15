@@ -137,7 +137,7 @@ final class PonderQuestionQuery
     return $question->loadAllFromArray($data);
   }
 
-  public function willFilterPage(array $questions) {
+  protected function willFilterPage(array $questions) {
     if ($this->needAnswers) {
       $aquery = id(new PonderAnswerQuery())
         ->setViewer($this->getViewer())
@@ -151,14 +151,15 @@ final class PonderQuestionQuery
       $answers = mgroup($answers, 'getQuestionID');
 
       foreach ($questions as $question) {
-        $question->attachAnswers(idx($answers, $question->getID(), array()));
+        $question_answers = idx($answers, $question->getID(), array());
+        $question->attachAnswers(mpull($question_answers, null, 'getPHID'));
       }
     }
 
     if ($this->needViewerVotes) {
       $viewer_phid = $this->getViewer()->getPHID();
 
-      $etype = PhabricatorEdgeConfig::TYPE_QUESTION_HAS_VOTING_USER;
+      $etype = PonderQuestionHasVotingUserEdgeType::EDGECONST;
       $edges = id(new PhabricatorEdgeQuery())
         ->withSourcePHIDs(mpull($questions, 'getPHID'))
         ->withDestinationPHIDs(array($viewer_phid))
@@ -191,6 +192,10 @@ final class PonderQuestionQuery
     }
 
     return implode(' ', $joins);
+  }
+
+  public function getQueryApplicationClass() {
+    return 'PhabricatorPonderApplication';
   }
 
 }

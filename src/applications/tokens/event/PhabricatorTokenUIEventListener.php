@@ -1,7 +1,7 @@
 <?php
 
 final class PhabricatorTokenUIEventListener
-  extends PhutilEventListener {
+  extends PhabricatorEventListener {
 
   public function register() {
     $this->listen(PhabricatorEventType::TYPE_UI_DIDRENDERACTIONS);
@@ -33,6 +33,10 @@ final class PhabricatorTokenUIEventListener
       return;
     }
 
+    if (!$this->canUseApplication($event->getUser())) {
+      return null;
+    }
+
     $current = id(new PhabricatorTokenGivenQuery())
       ->setViewer($user)
       ->withAuthorPHIDs(array($user->getPHID()))
@@ -44,13 +48,13 @@ final class PhabricatorTokenUIEventListener
         ->setWorkflow(true)
         ->setHref('/token/give/'.$object->getPHID().'/')
         ->setName(pht('Award Token'))
-        ->setIcon('like');
+        ->setIcon('fa-trophy');
     } else {
       $token_action = id(new PhabricatorActionView())
         ->setWorkflow(true)
         ->setHref('/token/give/'.$object->getPHID().'/')
         ->setName(pht('Rescind Token'))
-        ->setIcon('dislike');
+        ->setIcon('fa-trophy');
     }
     if (!$user->isLoggedIn()) {
       $token_action->setDisabled(true);
@@ -73,6 +77,10 @@ final class PhabricatorTokenUIEventListener
     if (!($object instanceof PhabricatorTokenReceiverInterface)) {
       // This object isn't a token receiver.
       return;
+    }
+
+    if (!$this->canUseApplication($event->getUser())) {
+      return null;
     }
 
     $limit = 1;
@@ -107,16 +115,29 @@ final class PhabricatorTokenUIEventListener
       }
 
       $token = $tokens[$token_given->getTokenPHID()];
+      $aural = javelin_tag(
+        'span',
+        array(
+          'aural' => true,
+        ),
+        pht(
+          '"%s" token, awarded by %s.',
+          $token->getName(),
+          $handles[$token_given->getAuthorPHID()]->getName()));
 
       $list[] = javelin_tag(
         'span',
         array(
           'sigil' => 'has-tooltip',
+          'class' => 'token-icon',
           'meta' => array(
             'tip' => $handles[$token_given->getAuthorPHID()]->getName(),
           ),
         ),
-        $token->renderIcon());
+        array(
+          $aural,
+          $token->renderIcon(),
+        ));
     }
 
     $view = $event->getValue('view');

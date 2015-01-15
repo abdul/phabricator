@@ -16,18 +16,18 @@ abstract class HeraldController extends PhabricatorController {
     return $response->setContent($page->render());
   }
 
-  public function buildApplicationMenu() {
+  protected function buildApplicationMenu() {
     return $this->buildSideNavView(true)->getMenu();
   }
 
-  public function buildApplicationCrumbs() {
+  protected function buildApplicationCrumbs() {
     $crumbs = parent::buildApplicationCrumbs();
 
     $crumbs->addAction(
       id(new PHUIListItemView())
         ->setName(pht('Create Herald Rule'))
         ->setHref($this->getApplicationURI('new/'))
-        ->setIcon('create'));
+        ->setIcon('fa-plus-square'));
 
     return $crumbs;
   }
@@ -39,7 +39,7 @@ abstract class HeraldController extends PhabricatorController {
     $nav->setBaseURI(new PhutilURI($this->getApplicationURI()));
 
     if ($for_app) {
-      $nav->addFilter('create', pht('Create Rule'));
+      $nav->addFilter('new', pht('Create Rule'));
     }
 
     id(new HeraldRuleSearchEngine())

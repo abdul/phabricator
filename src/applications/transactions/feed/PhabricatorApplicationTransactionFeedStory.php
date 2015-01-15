@@ -11,24 +11,56 @@ class PhabricatorApplicationTransactionFeedStory
   }
 
   public function getRequiredObjectPHIDs() {
-    return array(
-      $this->getPrimaryTransactionPHID(),
-    );
+    return $this->getValue('transactionPHIDs');
   }
 
   public function getRequiredHandlePHIDs() {
     $phids = array();
-    $phids[] = array($this->getValue('objectPHID'));
-    $phids[] = $this->getPrimaryTransaction()->getRequiredHandlePHIDs();
-    return array_mergev($phids);
+    $phids[] = $this->getValue('objectPHID');
+    foreach ($this->getValue('transactionPHIDs') as $xaction_phid) {
+      $xaction = $this->getObject($xaction_phid);
+      foreach ($xaction->getRequiredHandlePHIDs() as $handle_phid) {
+        $phids[] = $handle_phid;
+      }
+    }
+    return $phids;
   }
 
   protected function getPrimaryTransactionPHID() {
     return head($this->getValue('transactionPHIDs'));
   }
 
-  protected function getPrimaryTransaction() {
+  public function getPrimaryTransaction() {
     return $this->getObject($this->getPrimaryTransactionPHID());
+  }
+
+  public function getFieldStoryMarkupFields() {
+    $xaction_phids = $this->getValue('transactionPHIDs');
+
+    $fields = array();
+    foreach ($xaction_phids as $xaction_phid) {
+      $xaction = $this->getObject($xaction_phid);
+      foreach ($xaction->getMarkupFieldsForFeed($this) as $field) {
+        $fields[] = $field;
+      }
+    }
+
+    return $fields;
+  }
+
+  public function getMarkupText($field) {
+    $xaction_phids = $this->getValue('transactionPHIDs');
+
+    foreach ($xaction_phids as $xaction_phid) {
+      $xaction = $this->getObject($xaction_phid);
+      foreach ($xaction->getMarkupFieldsForFeed($this) as $xaction_field) {
+        if ($xaction_field == $field) {
+          return $xaction->getMarkupTextForFeed($this, $field);
+        }
+      }
+    }
+
+    return null;
   }
 
   public function renderView() {
@@ -40,25 +72,51 @@ class PhabricatorApplicationTransactionFeedStory
     $view->setAppIconFromPHID($handle->getPHID());
 
     $xaction_phids = $this->getValue('transactionPHIDs');
-    $xaction = $this->getObject(head($xaction_phids));
+    $xaction = $this->getPrimaryTransaction();
 
     $xaction->setHandles($this->getHandles());
     $view->setTitle($xaction->getTitleForFeed());
-    $body = $xaction->getBodyForFeed($this);
-    if (nonempty($body)) {
-      $view->appendChild($body);
+
+    foreach ($xaction_phids as $xaction_phid) {
+      $secondary_xaction = $this->getObject($xaction_phid);
+      $secondary_xaction->setHandles($this->getHandles());
+
+      $body = $secondary_xaction->getBodyForFeed($this);
+      if (nonempty($body)) {
+        $view->appendChild($body);
+      }
     }
 
     $view->setImage(
-      $this->getHandle(
-        $this->getPrimaryTransaction()->getAuthorPHID())->getImageURI());
+      $this->getHandle($xaction->getAuthorPHID())->getImageURI());
 
     return $view;
   }
 
   public function renderText() {
-    // TODO: This is grotesque; the feed notification handler relies on it.
-    return strip_tags(hsprintf('%s', $this->renderView()->render()));
+    $xaction = $this->getPrimaryTransaction();
+    $old_target = $xaction->getRenderingTarget();
+    $new_target = PhabricatorApplicationTransaction::TARGET_TEXT;
+    $xaction->setRenderingTarget($new_target);
+    $xaction->setHandles($this->getHandles());
+    $text = $xaction->getTitleForFeed();
+    $xaction->setRenderingTarget($old_target);
+    return $text;
+  }
+
+  public function renderAsTextForDoorkeeper(
+    DoorkeeperFeedStoryPublisher $publisher) {
+
+    $xactions = array();
+    $xaction_phids = $this->getValue('transactionPHIDs');
+    foreach ($xaction_phids as $xaction_phid) {
+      $xaction = $this->getObject($xaction_phid);
+      $xaction->setHandles($this->getHandles());
+      $xactions[] = $xaction;
+    }
+
+    $primary = $this->getPrimaryTransaction();
+    return $primary->renderAsTextForDoorkeeper($publisher, $this, $xactions);
   }
 
 }

@@ -3,7 +3,9 @@
 final class PhabricatorAuthNewController
   extends PhabricatorAuthProviderConfigController {
 
-  public function processRequest() {
+  public function handleRequest(AphrontRequest $request) {
+    $this->requireApplicationCapability(
+      AuthManageProvidersCapability::CAPABILITY);
     $request = $this->getRequest();
     $viewer = $request->getUser();
 
@@ -35,10 +37,6 @@ final class PhabricatorAuthNewController
         return id(new AphrontRedirectResponse())->setURI(
           $this->getApplicationURI('/config/new/'.$provider_string.'/'));
       }
-    }
-
-    if ($errors) {
-      $errors = id(new AphrontErrorView())->setErrors($errors);
     }
 
     $options = id(new AphrontFormRadioButtonControl())
@@ -81,15 +79,13 @@ final class PhabricatorAuthNewController
           ->addCancelButton($this->getApplicationURI())
           ->setValue(pht('Continue')));
 
-    $form_box = id(new PHUIFormBoxView())
+    $form_box = id(new PHUIObjectBoxView())
       ->setHeaderText(pht('Add Authentication Provider'))
-      ->setFormError($errors)
+      ->setFormErrors($errors)
       ->setForm($form);
 
     $crumbs = $this->buildApplicationCrumbs();
-    $crumbs->addCrumb(
-      id(new PhabricatorCrumbView())
-        ->setName(pht('Add Provider')));
+    $crumbs->addTextCrumb(pht('Add Provider'));
 
     return $this->buildApplicationPage(
       array(
@@ -98,7 +94,6 @@ final class PhabricatorAuthNewController
       ),
       array(
         'title' => pht('Add Authentication Provider'),
-        'device' => true,
       ));
   }
 

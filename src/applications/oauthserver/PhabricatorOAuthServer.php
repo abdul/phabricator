@@ -12,12 +12,12 @@
  * For an OAuth 2.0 server, there are two main steps:
  *
  * 1) Authorization - the user authorizes a given client to access the data
- * the OAuth 2.0 server protects.  Once this is achieved / if it has
+ * the OAuth 2.0 server protects. Once this is achieved / if it has
  * been achived already, the OAuth server sends the client an authorization
  * code.
  * 2) Access Token - the client should send the authorization code received in
  * step 1 along with its id and secret to the OAuth server to receive an
- * access token.  This access token can later be used to access Phabricator
+ * access token. This access token can later be used to access Phabricator
  * data on behalf of the user.
  *
  * @task auth Authorizing @{class:PhabricatorOAuthServerClient}s and
@@ -25,8 +25,6 @@
  * @task token Validating @{class:PhabricatorOAuthServerAuthorizationCode}s
  *             and generating @{class:PhabricatorOAuthServerAccessToken}s
  * @task internal Internals
- *
- * @group oauthserver
  */
 final class PhabricatorOAuthServer {
 
@@ -36,9 +34,6 @@ final class PhabricatorOAuthServer {
   private $user;
   private $client;
 
-  /**
-   * @group internal
-   */
   private function getUser() {
     if (!$this->user) {
       throw new Exception('You must setUser before you can getUser!');
@@ -51,9 +46,6 @@ final class PhabricatorOAuthServer {
     return $this;
   }
 
-  /**
-   * @group internal
-   */
   private function getClient() {
     if (!$this->client) {
       throw new Exception('You must setClient before you can getClient!');
@@ -223,8 +215,8 @@ final class PhabricatorOAuthServer {
 
   /**
    * If there's a URI specified in an OAuth request, it must be validated in
-   * its own right. Further, it must have the same domain and (at least) the
-   * same query parameters as the primary URI.
+   * its own right. Further, it must have the same domain, the same path, the
+   * same port, and (at least) the same query parameters as the primary URI.
    */
   public function validateSecondaryRedirectURI(
     PhutilURI $secondary_uri,
@@ -237,6 +229,16 @@ final class PhabricatorOAuthServer {
 
     // Both URIs must point at the same domain.
     if ($secondary_uri->getDomain() != $primary_uri->getDomain()) {
+      return false;
+    }
+
+    // Both URIs must have the same path
+    if ($secondary_uri->getPath() != $primary_uri->getPath()) {
+      return false;
+    }
+
+    // Both URIs must have the same port
+    if ($secondary_uri->getPort() != $primary_uri->getPort()) {
       return false;
     }
 
