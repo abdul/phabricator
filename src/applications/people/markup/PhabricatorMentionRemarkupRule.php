@@ -26,7 +26,7 @@ final class PhabricatorMentionRemarkupRule extends PhutilRemarkupRule {
       $text);
   }
 
-  protected function markupMention($matches) {
+  protected function markupMention(array $matches) {
     $engine = $this->getEngine();
 
     if ($engine->isTextMode()) {
@@ -72,15 +72,8 @@ final class PhabricatorMentionRemarkupRule extends PhutilRemarkupRule {
     $users = id(new PhabricatorPeopleQuery())
       ->setViewer($this->getEngine()->getConfig('viewer'))
       ->withUsernames($usernames)
+      ->needAvailability(true)
       ->execute();
-
-    if ($users) {
-      $user_statuses = id(new PhabricatorCalendarEvent())
-        ->loadCurrentStatuses(mpull($users, 'getPHID'));
-      $user_statuses = mpull($user_statuses, null, 'getUserPHID');
-    } else {
-      $user_statuses = array();
-    }
 
     $actual_users = array();
 
@@ -100,7 +93,7 @@ final class PhabricatorMentionRemarkupRule extends PhutilRemarkupRule {
 
       if ($exists) {
         $user = $actual_users[$username];
-        Javelin::initBehavior('phabricator-hovercards');
+        Javelin::initBehavior('phui-hovercards');
 
         // Check if the user has view access to the object she was mentioned in
         if ($context_object
@@ -143,6 +136,10 @@ final class PhabricatorMentionRemarkupRule extends PhutilRemarkupRule {
             ),
             '@'.$user->getUserName());
         } else {
+          if ($engine->getConfig('uri.full')) {
+            $user_href = PhabricatorEnv::getURI($user_href);
+          }
+
           $tag = id(new PHUITagView())
             ->setType(PHUITagView::TYPE_PERSON)
             ->setPHID($user->getPHID())
@@ -156,14 +153,8 @@ final class PhabricatorMentionRemarkupRule extends PhutilRemarkupRule {
           if (!$user->isUserActivated()) {
             $tag->setDotColor(PHUITagView::COLOR_GREY);
           } else {
-            $status = idx($user_statuses, $user->getPHID());
-            if ($status) {
-              $status = $status->getStatus();
-              if ($status == PhabricatorCalendarEvent::STATUS_AWAY) {
-                $tag->setDotColor(PHUITagView::COLOR_RED);
-              } else if ($status == PhabricatorCalendarEvent::STATUS_AWAY) {
-                $tag->setDotColor(PHUITagView::COLOR_ORANGE);
-              }
+            if ($user->getAwayUntil()) {
+              $tag->setDotColor(PHUITagView::COLOR_RED);
             }
           }
         }

@@ -11,8 +11,12 @@ final class PhabricatorReleephApplicationConfigOptions
     return pht('Options for configuring Releeph, the release branch tool.');
   }
 
-  public function getFontIcon() {
+  public function getIcon() {
     return 'fa-flag-checkered';
+  }
+
+  public function getGroup() {
+    return 'apps';
   }
 
   public function getOptions() {

@@ -5,7 +5,7 @@
  * @{function:require_celerity_resource}, and then builds appropriate HTML or
  * Ajax responses.
  */
-final class CelerityStaticResourceResponse {
+final class CelerityStaticResourceResponse extends Phobject {
 
   private $symbols = array();
   private $needsResolve = true;
@@ -13,8 +13,10 @@ final class CelerityStaticResourceResponse {
   private $packaged;
   private $metadata = array();
   private $metadataBlock = 0;
+  private $metadataLocked;
   private $behaviors = array();
   private $hasRendered = array();
+  private $postprocessorKey;
 
   public function __construct() {
     if (isset($_REQUEST['__metablock__'])) {
@@ -23,6 +25,13 @@ final class CelerityStaticResourceResponse {
   }
 
   public function addMetadata($metadata) {
+    if ($this->metadataLocked) {
+      throw new Exception(
+        pht(
+          'Attempting to add more metadata after metadata has been '.
+          'locked.'));
+    }
+
     $id = count($this->metadata);
     $this->metadata[$id] = $metadata;
     return $this->metadataBlock.'_'.$id;
@@ -32,15 +41,26 @@ final class CelerityStaticResourceResponse {
     return $this->metadataBlock;
   }
 
+  public function setPostprocessorKey($postprocessor_key) {
+    $this->postprocessorKey = $postprocessor_key;
+    return $this;
+  }
+
+  public function getPostprocessorKey() {
+    return $this->postprocessorKey;
+  }
+
   /**
-   * Register a behavior for initialization. NOTE: if $config is empty,
-   * a behavior will execute only once even if it is initialized multiple times.
-   * If $config is nonempty, the behavior will be invoked once for each config.
+   * Register a behavior for initialization.
+   *
+   * NOTE: If `$config` is empty, a behavior will execute only once even if it
+   * is initialized multiple times. If `$config` is nonempty, the behavior will
+   * be invoked once for each configuration.
    */
   public function initBehavior(
     $behavior,
     array $config = array(),
-    $source_name) {
+    $source_name = null) {
 
     $this->requireResource('javelin-behavior-'.$behavior, $source_name);
 
@@ -144,6 +164,12 @@ final class CelerityStaticResourceResponse {
     $uri = $this->getURI($map, $name);
     $type = $map->getResourceTypeForName($name);
 
+    $multimeter = MultimeterControl::getInstance();
+    if ($multimeter) {
+      $event_type = MultimeterEvent::TYPE_STATIC_RESOURCE;
+      $multimeter->newEvent($event_type, 'rsrc.'.$name, 1);
+    }
+
     switch ($type) {
       case 'css':
         return phutil_tag(
@@ -171,6 +197,8 @@ final class CelerityStaticResourceResponse {
   }
 
   public function renderHTMLFooter() {
+    $this->metadataLocked = true;
+
     $data = array();
     if ($this->metadata) {
       $json_metadata = AphrontResponse::encodeJSONForHTTPResponse(
@@ -236,10 +264,15 @@ final class CelerityStaticResourceResponse {
   public static function renderInlineScript($data) {
     if (stripos($data, '</script>') !== false) {
       throw new Exception(
-        'Literal </script> is not allowed inside inline script.');
+        pht(
+          'Literal %s is not allowed inside inline script.',
+          '</script>'));
     }
     if (strpos($data, '<!') !== false) {
-      throw new Exception('Literal <! is not allowed inside inline script.');
+      throw new Exception(
+        pht(
+          'Literal %s is not allowed inside inline script.',
+          '<!'));
     }
     // We don't use <![CDATA[ ]]> because it is ignored by HTML parsers. We
     // would need to send the document with XHTML content type.
@@ -286,6 +319,12 @@ final class CelerityStaticResourceResponse {
     $use_primary_domain = false) {
 
     $uri = $map->getURIForName($name);
+
+    // If we have a postprocessor selected, add it to the URI.
+    $postprocessor_key = $this->getPostprocessorKey();
+    if ($postprocessor_key) {
+      $uri = preg_replace('@^/res/@', '/res/'.$postprocessor_key.'X/', $uri);
+    }
 
     // In developer mode, we dump file modification times into the URI. When a
     // page is reloaded in the browser, any resources brought in by Ajax calls

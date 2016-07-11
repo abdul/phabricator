@@ -11,8 +11,12 @@ final class PhabricatorMySQLConfigOptions
     return pht('Database configuration.');
   }
 
-  public function getFontIcon() {
+  public function getIcon() {
     return 'fa-database';
+  }
+
+  public function getGroup() {
+    return 'core';
   }
 
   public function getOptions() {
@@ -59,8 +63,8 @@ final class PhabricatorMySQLConfigOptions
             'Phabricator connects to MySQL through a swappable abstraction '.
             'layer. You can choose an alternate implementation by setting '.
             'this option. To provide your own implementation, extend '.
-            '`AphrontMySQLDatabaseConnectionBase`. It is very unlikely that '.
-            'you need to change this.')),
+            '`%s`. It is very unlikely that you need to change this.',
+            'AphrontMySQLDatabaseConnectionBase')),
       $this->newOption('storage.default-namespace', 'string', 'phabricator')
         ->setLocked(true)
         ->setSummary(

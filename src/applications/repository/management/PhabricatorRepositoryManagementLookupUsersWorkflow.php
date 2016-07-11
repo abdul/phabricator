@@ -7,7 +7,8 @@ final class PhabricatorRepositoryManagementLookupUsersWorkflow
     $this
       ->setName('lookup-users')
       ->setExamples('**lookup-users** __commit__ ...')
-      ->setSynopsis('Resolve user accounts for users attached to __commit__.')
+      ->setSynopsis(
+        pht('Resolve user accounts for users attached to __commit__.'))
       ->setArguments(
         array(
           array(
@@ -21,7 +22,7 @@ final class PhabricatorRepositoryManagementLookupUsersWorkflow
     $commits = $this->loadCommits($args, 'commits');
     if (!$commits) {
       throw new PhutilArgumentUsageException(
-        'Specify one or more commits to resolve users for.');
+        pht('Specify one or more commits to resolve users for.'));
     }
 
     $console = PhutilConsole::getConsole();
@@ -42,13 +43,16 @@ final class PhabricatorRepositoryManagementLookupUsersWorkflow
           )),
         'diffusion.querycommits',
         array(
+          'repositoryPHID' => $repo->getPHID(),
           'phids' => array($commit->getPHID()),
           'bypassCache' => true,
         ));
 
       if (empty($refs_raw['data'])) {
         throw new Exception(
-          pht('Unable to retrieve details for commit "%s"!'));
+          pht(
+            'Unable to retrieve details for commit "%s"!',
+            $commit->getPHID()));
       }
 
       $ref = DiffusionCommitRef::newFromConduitResult(head($refs_raw['data']));

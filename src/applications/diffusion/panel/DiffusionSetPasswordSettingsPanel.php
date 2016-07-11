@@ -2,7 +2,11 @@
 
 final class DiffusionSetPasswordSettingsPanel extends PhabricatorSettingsPanel {
 
-  public function isEditableByAdministrators() {
+  public function isManagementPanel() {
+    if ($this->getUser()->getIsMailingList()) {
+      return false;
+    }
+
     return true;
   }
 
@@ -14,8 +18,8 @@ final class DiffusionSetPasswordSettingsPanel extends PhabricatorSettingsPanel {
     return pht('VCS Password');
   }
 
-  public function getPanelGroup() {
-    return pht('Authentication');
+  public function getPanelGroupKey() {
+    return PhabricatorSettingsAuthenticationPanelGroup::PANELGROUPKEY;
   }
 
   public function isEnabled() {
@@ -258,8 +262,8 @@ final class DiffusionSetPasswordSettingsPanel extends PhabricatorSettingsPanel {
 
     $saved = null;
     if ($request->getBool('saved')) {
-      $saved = id(new PHUIErrorView())
-        ->setSeverity(PHUIErrorView::SEVERITY_NOTICE)
+      $saved = id(new PHUIInfoView())
+        ->setSeverity(PHUIInfoView::SEVERITY_NOTICE)
         ->setTitle(pht('Password Updated'))
         ->appendChild(pht('Your VCS password has been updated.'));
     }

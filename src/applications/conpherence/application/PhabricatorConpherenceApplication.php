@@ -11,10 +11,10 @@ final class PhabricatorConpherenceApplication extends PhabricatorApplication {
   }
 
   public function getShortDescription() {
-    return pht('Send Messages');
+    return pht('Chat with Others');
   }
 
-  public function getFontIcon() {
+  public function getIcon() {
     return 'fa-comments';
   }
 
@@ -22,19 +22,25 @@ final class PhabricatorConpherenceApplication extends PhabricatorApplication {
     return "\xE2\x9C\x86";
   }
 
-  public function getEventListeners() {
+  public function getRemarkupRules() {
     return array(
-      new ConpherenceHovercardEventListener(),
+      new ConpherenceThreadRemarkupRule(),
     );
   }
 
   public function getRoutes() {
     return array(
+      '/Z(?P<id>[1-9]\d*)'         => 'ConpherenceViewController',
       '/conpherence/' => array(
         ''                         => 'ConpherenceListController',
         'thread/(?P<id>[1-9]\d*)/' => 'ConpherenceListController',
         '(?P<id>[1-9]\d*)/'        => 'ConpherenceViewController',
-        'new/'                     => 'ConpherenceNewController',
+        '(?P<id>[1-9]\d*)/(?P<messageID>[1-9]\d*)/'
+                                   => 'ConpherenceViewController',
+        'columnview/'              => 'ConpherenceColumnViewController',
+        'new/'                     => 'ConpherenceNewRoomController',
+        'search/(?:query/(?P<queryKey>[^/]+)/)?'
+           => 'ConpherenceRoomListController',
         'panel/'                   => 'ConpherenceNotificationPanelController',
         'widget/(?P<id>[1-9]\d*)/' => 'ConpherenceWidgetController',
         'update/(?P<id>[1-9]\d*)/' => 'ConpherenceUpdateController',
@@ -42,17 +48,21 @@ final class PhabricatorConpherenceApplication extends PhabricatorApplication {
     );
   }
 
-  public function getQuickCreateItems(PhabricatorUser $viewer) {
-    $items = array();
+  public function getQuicksandURIPatternBlacklist() {
+    return array(
+      '/conpherence/.*',
+      '/Z\d+',
+    );
+  }
 
-    $item = id(new PHUIListItemView())
-      ->setName(pht('Conpherence Thread'))
-      ->setIcon('fa-comments')
-      ->setWorkflow(true)
-      ->setHref($this->getBaseURI().'new/');
-    $items[] = $item;
+  public function getMailCommandObjects() {
 
-    return $items;
+    // TODO: Conpherence threads don't currently support any commands directly,
+    // so the documentation page we end up generating is empty and funny
+    // looking. Add support here once we support "!add", "!leave", "!topic",
+    // or whatever else.
+
+    return array();
   }
 
 }

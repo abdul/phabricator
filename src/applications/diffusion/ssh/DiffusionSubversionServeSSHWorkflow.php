@@ -4,7 +4,6 @@
  * This protocol has a good spec here:
  *
  *   http://svn.apache.org/repos/asf/subversion/trunk/subversion/libsvn_ra_svn/protocol
- *
  */
 final class DiffusionSubversionServeSSHWorkflow
   extends DiffusionSubversionSSHWorkflow {
@@ -22,6 +21,7 @@ final class DiffusionSubversionServeSSHWorkflow
   private $externalBaseURI;
   private $peekBuffer;
   private $command;
+  private $isProxying;
 
   private function getCommand() {
     return $this->command;
@@ -83,7 +83,8 @@ final class DiffusionSubversionServeSSHWorkflow
       if (!$exec_channel->isOpenForReading()) {
         throw new Exception(
           pht(
-            'svnserve subprocess exited before emitting a protocol frame.'));
+            '%s subprocess exited before emitting a protocol frame.',
+            'svnserve'));
       }
     }
 
@@ -141,19 +142,30 @@ final class DiffusionSubversionServeSSHWorkflow
 
     $args = $this->getArgs();
     if (!$args->getArg('tunnel')) {
-      throw new Exception('Expected `svnserve -t`!');
+      throw new Exception(pht('Expected `%s`!', 'svnserve -t'));
     }
 
     if ($this->shouldProxy()) {
       $command = $this->getProxyCommand();
+      $this->isProxying = true;
+      $cwd = null;
     } else {
       $command = csprintf(
         'svnserve -t --tunnel-user=%s',
         $this->getUser()->getUsername());
+      $cwd = PhabricatorEnv::getEmptyCWD();
     }
 
     $command = PhabricatorDaemon::sudoCommandAsDaemonUser($command);
     $future = new ExecFuture('%C', $command);
+
+    // If we're receiving a commit, svnserve will fail to execute the commit
+    // hook with an unhelpful error if the CWD isn't readable by the user we
+    // are sudoing to. Switch to a readable, empty CWD before running
+    // svnserve. See T10941.
+    if ($cwd !== null) {
+      $future->setCWD($cwd);
+    }
 
     $this->inProtocol = new DiffusionSubversionWireProtocol();
     $this->outProtocol = new DiffusionSubversionWireProtocol();
@@ -235,7 +247,9 @@ final class DiffusionSubversionServeSSHWorkflow
             $message_raw = $proto->serializeStruct($struct);
             break;
           case 'add-file':
+          case 'add-dir':
             // ( add-file ( path dir-token file-token [ copy-path copy-rev ] ) )
+            // ( add-dir ( path parent child [ copy-path copy-rev ] ) )
             if (isset($struct[1]['value'][3]['value'][0]['value'])) {
               $copy_from = $struct[1]['value'][3]['value'][0]['value'];
               $copy_from = $this->makeInternalURI($copy_from);
@@ -348,8 +362,9 @@ final class DiffusionSubversionServeSSHWorkflow
     if ($proto !== 'svn+ssh') {
       throw new Exception(
         pht(
-          'Protocol for URI "%s" MUST be "svn+ssh".',
-          $uri_string));
+          'Protocol for URI "%s" MUST be "%s".',
+          $uri_string,
+          'svn+ssh'));
     }
     $path = $uri->getPath();
 
@@ -358,7 +373,8 @@ final class DiffusionSubversionServeSSHWorkflow
     if (preg_match('(/\\.\\./)', $path)) {
       throw new Exception(
         pht(
-          'String "/../" is invalid in path specification "%s".',
+          'String "%s" is invalid in path specification "%s".',
+          '/../',
           $uri_string));
     }
 
@@ -368,19 +384,21 @@ final class DiffusionSubversionServeSSHWorkflow
   }
 
   private function makeInternalURI($uri_string) {
+    if ($this->isProxying) {
+      return $uri_string;
+    }
+
     $uri = new PhutilURI($uri_string);
 
     $repository = $this->getRepository();
 
     $path = $this->getPathFromSubversionURI($uri_string);
-    $path = preg_replace(
-      '(^/diffusion/[A-Z]+)',
-      rtrim($repository->getLocalPath(), '/'),
-      $path);
+    $external_base = $this->getBaseRequestPath();
 
-    if (preg_match('(^/diffusion/[A-Z]+/\z)', $path)) {
-      $path = rtrim($path, '/');
-    }
+    // Replace "/diffusion/X" in the request with the repository local path,
+    // so "/diffusion/X/master/" becomes "/path/to/repository/X/master/".
+    $local_path = rtrim($repository->getLocalPath(), '/');
+    $path = $local_path.substr($path, strlen($external_base));
 
     // NOTE: We are intentionally NOT removing username information from the
     // URI. Subversion retains it over the course of the request and considers
@@ -394,7 +412,7 @@ final class DiffusionSubversionServeSSHWorkflow
     if ($this->externalBaseURI === null) {
       $pre = (string)id(clone $uri)->setPath('');
 
-      $external_path = '/diffusion/'.$repository->getCallsign();
+      $external_path = $external_base;
       $external_path = $this->normalizeSVNPath($external_path);
       $this->externalBaseURI = $pre.$external_path;
 
@@ -407,6 +425,10 @@ final class DiffusionSubversionServeSSHWorkflow
   }
 
   private function makeExternalURI($uri) {
+    if ($this->isProxying) {
+      return $uri;
+    }
+
     $internal = $this->internalBaseURI;
     $external = $this->externalBaseURI;
 

@@ -11,8 +11,12 @@ final class PhabricatorPhrictionConfigOptions
     return pht('Options related to Phriction (wiki).');
   }
 
-  public function getFontIcon() {
+  public function getIcon() {
     return 'fa-book';
+  }
+
+  public function getGroup() {
+    return 'apps';
   }
 
   public function getOptions() {

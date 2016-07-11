@@ -11,8 +11,12 @@ final class ConpherenceConfigOptions
     return pht('Configure Conpherence messaging.');
   }
 
-  public function getFontIcon() {
+  public function getIcon() {
     return 'fa-comments';
+  }
+
+  public function getGroup() {
+    return 'apps';
   }
 
   public function getOptions() {

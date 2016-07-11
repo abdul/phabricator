@@ -3,23 +3,18 @@
 final class PhabricatorConfigIssueViewController
   extends PhabricatorConfigController {
 
-  private $issueKey;
-
-  public function willProcessRequest(array $data) {
-    $this->issueKey = $data['key'];
-  }
-
-  public function processRequest() {
-    $request = $this->getRequest();
-    $user = $request->getUser();
+  public function handleRequest(AphrontRequest $request) {
+    $viewer = $request->getViewer();
+    $issue_key = $request->getURIData('key');
 
     $issues = PhabricatorSetupCheck::runAllChecks();
-    PhabricatorSetupCheck::setOpenSetupIssueCount(
-      PhabricatorSetupCheck::countUnignoredIssues($issues));
+    PhabricatorSetupCheck::setOpenSetupIssueKeys(
+      PhabricatorSetupCheck::getUnignoredIssueKeys($issues),
+      $update_database = true);
 
-    if (empty($issues[$this->issueKey])) {
-      $content = id(new PHUIErrorView())
-        ->setSeverity(PHUIErrorView::SEVERITY_NOTICE)
+    if (empty($issues[$issue_key])) {
+      $content = id(new PHUIInfoView())
+        ->setSeverity(PHUIInfoView::SEVERITY_NOTICE)
         ->setTitle(pht('Issue Resolved'))
         ->appendChild(pht('This setup issue has been resolved. '))
         ->appendChild(
@@ -31,7 +26,7 @@ final class PhabricatorConfigIssueViewController
             pht('Return to Open Issue List')));
       $title = pht('Resolved Issue');
     } else {
-      $issue = $issues[$this->issueKey];
+      $issue = $issues[$issue_key];
       $content = $this->renderIssue($issue);
       $title = $issue->getShortName();
     }
@@ -42,14 +37,10 @@ final class PhabricatorConfigIssueViewController
       ->addTextCrumb(pht('Setup Issues'), $this->getApplicationURI('issue/'))
       ->addTextCrumb($title, $request->getRequestURI());
 
-    return $this->buildApplicationPage(
-      array(
-        $crumbs,
-        $content,
-      ),
-      array(
-        'title' => $title,
-      ));
+    return $this->newPage()
+      ->setTitle($title)
+      ->setCrumbs($crumbs)
+      ->appendChild($content);
   }
 
   private function renderIssue(PhabricatorSetupIssue $issue) {

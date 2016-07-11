@@ -18,9 +18,16 @@ abstract class CelerityResourceController extends PhabricatorController {
     return true;
   }
 
+  public function shouldAllowLegallyNonCompliantUsers() {
+    return true;
+  }
+
   abstract public function getCelerityResourceMap();
 
-  protected function serveResource($path, $package_hash = null) {
+  protected function serveResource(array $spec) {
+    $path = $spec['path'];
+    $hash = idx($spec, 'hash');
+
     // Sanity checking to keep this from exposing anything sensitive, since it
     // ultimately boils down to disk reads.
     if (preg_match('@(//|\.\.)@', $path)) {
@@ -31,23 +38,29 @@ abstract class CelerityResourceController extends PhabricatorController {
     $type_map = self::getSupportedResourceTypes();
 
     if (empty($type_map[$type])) {
-      throw new Exception('Only static resources may be served.');
+      throw new Exception(pht('Only static resources may be served.'));
     }
 
     $dev_mode = PhabricatorEnv::getEnvConfig('phabricator.developer-mode');
 
-    if (AphrontRequest::getHTTPHeader('If-Modified-Since') && !$dev_mode) {
+    $map = $this->getCelerityResourceMap();
+    $expect_hash = $map->getHashForName($path);
+
+    // Test if the URI hash is correct for our current resource map. If it
+    // is not, refuse to cache this resource. This avoids poisoning caches
+    // and CDNs if we're getting a request for a new resource to an old node
+    // shortly after a push.
+    $is_cacheable = ($hash === $expect_hash);
+    $is_locally_cacheable = $this->isLocallyCacheableResourceType($type);
+    if (AphrontRequest::getHTTPHeader('If-Modified-Since') && $is_cacheable) {
       // Return a "304 Not Modified". We don't care about the value of this
       // field since we never change what resource is served by a given URI.
       return $this->makeResponseCacheable(new Aphront304Response());
     }
 
-    $is_cacheable = (!$dev_mode) &&
-                    $this->isCacheableResourceType($type);
-
     $cache = null;
     $data = null;
-    if ($is_cacheable) {
+    if ($is_cacheable && $is_locally_cacheable && !$dev_mode) {
       $cache = PhabricatorCaches::getImmutableCache();
 
       $request_path = $this->getRequest()->getPath();
@@ -57,8 +70,6 @@ abstract class CelerityResourceController extends PhabricatorController {
     }
 
     if ($data === null) {
-      $map = $this->getCelerityResourceMap();
-
       if ($map->isPackageResource($path)) {
         $resource_names = $map->getResourceNamesForPackageName($path);
         if (!$resource_names) {
@@ -97,8 +108,15 @@ abstract class CelerityResourceController extends PhabricatorController {
     $response->setMimeType($type_map[$type]);
 
     // NOTE: This is a piece of magic required to make WOFF fonts work in
-    // Firefox. Possibly we should generalize this.
-    if ($type == 'woff' || $type == 'woff2') {
+    // Firefox and IE. Possibly we should generalize this more.
+
+    $cross_origin_types = array(
+      'woff' => true,
+      'woff2' => true,
+      'eot' => true,
+    );
+
+    if (isset($cross_origin_types[$type])) {
       // We could be more tailored here, but it's not currently trivial to
       // generate a comprehensive list of valid origins (an install may have
       // arbitrarily many Phame blogs, for example), and we lose nothing by
@@ -106,7 +124,11 @@ abstract class CelerityResourceController extends PhabricatorController {
       $response->addAllowOrigin('*');
     }
 
-    return $this->makeResponseCacheable($response);
+    if ($is_cacheable) {
+      $response = $this->makeResponseCacheable($response);
+    }
+
+    return $response;
   }
 
   public static function getSupportedResourceTypes() {
@@ -114,6 +136,7 @@ abstract class CelerityResourceController extends PhabricatorController {
       'css' => 'text/css; charset=utf-8',
       'js'  => 'text/javascript; charset=utf-8',
       'png' => 'image/png',
+      'svg' => 'image/svg+xml',
       'gif' => 'image/gif',
       'jpg' => 'image/jpeg',
       'swf' => 'application/x-shockwave-flash',
@@ -121,12 +144,14 @@ abstract class CelerityResourceController extends PhabricatorController {
       'woff2' => 'font/woff2',
       'eot' => 'font/eot',
       'ttf' => 'font/ttf',
+      'mp3' => 'audio/mpeg',
     );
   }
 
   private function makeResponseCacheable(AphrontResponse $response) {
     $response->setCacheDurationInSeconds(60 * 60 * 24 * 30);
     $response->setLastModified(time());
+    $response->setCanCDN(true);
 
     return $response;
   }
@@ -143,7 +168,7 @@ abstract class CelerityResourceController extends PhabricatorController {
    * @param string  Resource type.
    * @return bool   True to enable caching.
    */
-  private function isCacheableResourceType($type) {
+  private function isLocallyCacheableResourceType($type) {
     $types = array(
       'js' => true,
       'css' => true,
@@ -152,8 +177,8 @@ abstract class CelerityResourceController extends PhabricatorController {
     return isset($types[$type]);
   }
 
-  private function getCacheKey($path) {
-    return 'celerity:'.$path;
+  protected function getCacheKey($path) {
+    return 'celerity:'.PhabricatorHash::digestToLength($path, 64);
   }
 
 }

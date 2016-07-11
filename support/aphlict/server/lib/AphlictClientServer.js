@@ -5,19 +5,71 @@ var JX = require('./javelin').JX;
 require('./AphlictListenerList');
 require('./AphlictLog');
 
+var url = require('url');
 var util = require('util');
 var WebSocket = require('ws');
 
 JX.install('AphlictClientServer', {
 
   construct: function(server) {
-    this.setListenerList(new JX.AphlictListenerList());
-    this.setLogger(new JX.AphlictLog());
+    server.on('request', JX.bind(this, this._onrequest));
+
     this._server = server;
+    this._lists = {};
+  },
+
+  properties: {
+    logger: null,
   },
 
   members: {
     _server: null,
+    _lists: null,
+
+    getListenerList: function(instance) {
+      if (!this._lists[instance]) {
+        this._lists[instance] = new JX.AphlictListenerList(instance);
+      }
+      return this._lists[instance];
+    },
+
+    log: function() {
+      var logger = this.getLogger();
+      if (!logger) {
+        return;
+      }
+
+      logger.log.apply(logger, arguments);
+
+      return this;
+    },
+
+    _onrequest: function(request, response) {
+      // The websocket code upgrades connections before they get here, so
+      // this only handles normal HTTP connections. We just fail them with
+      // a 501 response.
+      response.writeHead(501);
+      response.end('HTTP/501 Use Websockets\n');
+    },
+
+    _parseInstanceFromPath: function(path) {
+      // If there's no "~" marker in the path, it's not an instance name.
+      // Users sometimes configure nginx or Apache to proxy based on the
+      // path.
+      if (path.indexOf('~') === -1) {
+        return 'default';
+      }
+
+      var instance = path.split('~')[1];
+
+      // Remove any "/" characters.
+      instance = instance.replace(/\//g, '');
+      if (!instance.length) {
+        return 'default';
+      }
+
+      return instance;
+    },
 
     listen: function() {
       var self = this;
@@ -25,10 +77,13 @@ JX.install('AphlictClientServer', {
       var wss = new WebSocket.Server({server: server});
 
       wss.on('connection', function(ws) {
-        var listener = self.getListenerList().addListener(ws);
+        var path = url.parse(ws.upgradeReq.url).pathname;
+        var instance = self._parseInstanceFromPath(path);
+
+        var listener = self.getListenerList(instance).addListener(ws);
 
         function log() {
-          self.getLogger().log(
+          self.log(
             util.format('<%s>', listener.getDescription()) +
             ' ' +
             util.format.apply(null, arguments));
@@ -70,28 +125,12 @@ JX.install('AphlictClientServer', {
         });
 
         ws.on('close', function() {
-          self.getListenerList().removeListener(listener);
+          self.getListenerList(instance).removeListener(listener);
           log('Disconnected.');
         });
-
-        wss.on('close', function() {
-          self.getListenerList().removeListener(listener);
-          log('Disconnected.');
-        });
-
-        wss.on('error', function(err) {
-          log('Error: %s', err.message);
-        });
-
       });
 
-    },
-
-  },
-
-  properties: {
-    listenerList: null,
-    logger: null,
+    }
   }
 
 });
