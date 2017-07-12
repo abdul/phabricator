@@ -41,7 +41,8 @@ final class ManiphestTaskResultListView extends ManiphestView {
     // If we didn't match anything, just pick up the default empty state.
     if (!$tasks) {
       return id(new PHUIObjectItemListView())
-        ->setUser($viewer);
+        ->setUser($viewer)
+        ->setNoDataString(pht('No tasks found.'));
     }
 
     $group_parameter = nonempty($query->getParameter('group'), 'priority');
@@ -195,7 +196,7 @@ final class ManiphestTaskResultListView extends ManiphestView {
       array(
         'href'        => '#',
         'mustcapture' => true,
-        'class'       => 'grey button',
+        'class'       => 'button button-grey',
         'id'          => 'batch-select-all',
       ),
       pht('Select All'));
@@ -205,7 +206,7 @@ final class ManiphestTaskResultListView extends ManiphestView {
       array(
         'href'        => '#',
         'mustcapture' => true,
-        'class'       => 'grey button',
+        'class'       => 'button button-grey',
         'id'          => 'batch-select-none',
       ),
       pht('Clear Selection'));
@@ -223,7 +224,7 @@ final class ManiphestTaskResultListView extends ManiphestView {
       'a',
       array(
         'href' => '/maniphest/export/'.$saved_query->getQueryKey().'/',
-        'class' => 'grey button',
+        'class' => 'button button-grey',
       ),
       pht('Export to Excel'));
 

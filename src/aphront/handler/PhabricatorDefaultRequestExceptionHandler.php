@@ -11,9 +11,9 @@ final class PhabricatorDefaultRequestExceptionHandler
     return pht('Handles all other exceptions.');
   }
 
-  public function canHandleRequestException(
+  public function canHandleRequestThrowable(
     AphrontRequest $request,
-    Exception $ex) {
+    $throwable) {
 
     if (!$this->isPhabricatorSite($request)) {
       return false;
@@ -22,19 +22,29 @@ final class PhabricatorDefaultRequestExceptionHandler
     return true;
   }
 
-  public function handleRequestException(
+  public function handleRequestThrowable(
     AphrontRequest $request,
-    Exception $ex) {
+    $throwable) {
 
     $viewer = $this->getViewer($request);
 
-    // Always log the unhandled exception.
-    phlog($ex);
+    // Some types of uninteresting request exceptions don't get logged, usually
+    // because they are caused by the background radiation of bot traffic on
+    // the internet. These include requests with bad CSRF tokens and
+    // questionable "Host" headers.
+    $should_log = true;
+    if ($throwable instanceof AphrontMalformedRequestException) {
+      $should_log = !$throwable->getIsUnlogged();
+    }
 
-    $class = get_class($ex);
-    $message = $ex->getMessage();
+    if ($should_log) {
+      phlog($throwable);
+    }
 
-    if ($ex instanceof AphrontSchemaQueryException) {
+    $class = get_class($throwable);
+    $message = $throwable->getMessage();
+
+    if ($throwable instanceof AphrontSchemaQueryException) {
       $message .= "\n\n".pht(
         "NOTE: This usually indicates that the MySQL schema has not been ".
         "properly upgraded. Run '%s' to ensure your schema is up to date.",
@@ -44,7 +54,7 @@ final class PhabricatorDefaultRequestExceptionHandler
     if (PhabricatorEnv::getEnvConfig('phabricator.developer-mode')) {
       $trace = id(new AphrontStackTraceView())
         ->setUser($viewer)
-        ->setTrace($ex->getTrace());
+        ->setTrace($throwable->getTrace());
     } else {
       $trace = null;
     }

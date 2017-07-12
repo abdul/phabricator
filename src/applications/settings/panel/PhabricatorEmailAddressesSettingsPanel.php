@@ -63,7 +63,7 @@ final class PhabricatorEmailAddressesSettingsPanel
       $button_verify = javelin_tag(
         'a',
         array(
-          'class' => 'button small grey',
+          'class' => 'button small button-grey',
           'href'  => $uri->alter('verify', $email->getID()),
           'sigil' => 'workflow',
         ),
@@ -72,7 +72,7 @@ final class PhabricatorEmailAddressesSettingsPanel
       $button_make_primary = javelin_tag(
         'a',
         array(
-          'class' => 'button small grey',
+          'class' => 'button small button-grey',
           'href'  => $uri->alter('primary', $email->getID()),
           'sigil' => 'workflow',
         ),
@@ -81,7 +81,7 @@ final class PhabricatorEmailAddressesSettingsPanel
       $button_remove = javelin_tag(
         'a',
         array(
-          'class'   => 'button small grey',
+          'class'   => 'button small button-grey',
           'href'    => $uri->alter('delete', $email->getID()),
           'sigil'   => 'workflow',
         ),
@@ -164,6 +164,11 @@ final class PhabricatorEmailAddressesSettingsPanel
 
     $user = $this->getUser();
     $viewer = $this->getViewer();
+
+    $token = id(new PhabricatorAuthSessionEngine())->requireHighSecuritySession(
+      $viewer,
+      $request,
+      $this->getPanelURI());
 
     $e_email = true;
     $email   = null;
@@ -275,6 +280,11 @@ final class PhabricatorEmailAddressesSettingsPanel
     $email_id) {
     $user = $this->getUser();
     $viewer = $this->getViewer();
+
+    $token = id(new PhabricatorAuthSessionEngine())->requireHighSecuritySession(
+      $viewer,
+      $request,
+      $this->getPanelURI());
 
     // NOTE: You can only delete your own email addresses, and you can not
     // delete your primary address.

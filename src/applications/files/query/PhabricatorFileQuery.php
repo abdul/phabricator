@@ -15,7 +15,10 @@ final class PhabricatorFileQuery
   private $maxLength;
   private $names;
   private $isPartial;
+  private $isDeleted;
   private $needTransforms;
+  private $builtinKeys;
+  private $isBuiltin;
 
   public function withIDs(array $ids) {
     $this->ids = $ids;
@@ -44,6 +47,16 @@ final class PhabricatorFileQuery
 
   public function withContentHashes(array $content_hashes) {
     $this->contentHashes = $content_hashes;
+    return $this;
+  }
+
+  public function withBuiltinKeys(array $keys) {
+    $this->builtinKeys = $keys;
+    return $this;
+  }
+
+  public function withIsBuiltin($is_builtin) {
+    $this->isBuiltin = $is_builtin;
     return $this;
   }
 
@@ -111,6 +124,17 @@ final class PhabricatorFileQuery
   public function withIsPartial($partial) {
     $this->isPartial = $partial;
     return $this;
+  }
+
+  public function withIsDeleted($deleted) {
+    $this->isDeleted = $deleted;
+    return $this;
+  }
+
+  public function withNameNgrams($ngrams) {
+    return $this->withNgramsConstraint(
+      id(new PhabricatorFileNameNgrams()),
+      $ngrams);
   }
 
   public function showOnlyExplicitUploads($explicit_uploads) {
@@ -382,6 +406,32 @@ final class PhabricatorFileQuery
         $conn,
         'isPartial = %d',
         (int)$this->isPartial);
+    }
+
+    if ($this->isDeleted !== null) {
+      $where[] = qsprintf(
+        $conn,
+        'isDeleted = %d',
+        (int)$this->isDeleted);
+    }
+
+    if ($this->builtinKeys !== null) {
+      $where[] = qsprintf(
+        $conn,
+        'builtinKey IN (%Ls)',
+        $this->builtinKeys);
+    }
+
+    if ($this->isBuiltin !== null) {
+      if ($this->isBuiltin) {
+        $where[] = qsprintf(
+          $conn,
+          'builtinKey IS NOT NULL');
+      } else {
+        $where[] = qsprintf(
+          $conn,
+          'builtinKey IS NULL');
+      }
     }
 
     return $where;

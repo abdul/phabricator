@@ -98,7 +98,7 @@ abstract class PhabricatorController extends AphrontController {
 
 
       if (!$user->isLoggedIn()) {
-        $user->attachAlternateCSRFString(PhabricatorHash::digest($phsid));
+        $user->attachAlternateCSRFString(PhabricatorHash::weakDigest($phsid));
       }
 
       $request->setUser($user);
@@ -471,7 +471,7 @@ abstract class PhabricatorController extends AphrontController {
       ->setViewer($this->getViewer());
   }
 
-  public function newCurtainView($object) {
+  public function newCurtainView($object = null) {
     $viewer = $this->getViewer();
 
     $action_id = celerity_generate_unique_node_id();
@@ -483,17 +483,21 @@ abstract class PhabricatorController extends AphrontController {
     // NOTE: Applications (objects of class PhabricatorApplication) can't
     // currently be set here, although they don't need any of the extensions
     // anyway. This should probably work differently than it does, though.
-    if ($object instanceof PhabricatorLiskDAO) {
-      $action_list->setObject($object);
+    if ($object) {
+      if ($object instanceof PhabricatorLiskDAO) {
+        $action_list->setObject($object);
+      }
     }
 
     $curtain = id(new PHUICurtainView())
       ->setViewer($viewer)
       ->setActionList($action_list);
 
-    $panels = PHUICurtainExtension::buildExtensionPanels($viewer, $object);
-    foreach ($panels as $panel) {
-      $curtain->addPanel($panel);
+    if ($object) {
+      $panels = PHUICurtainExtension::buildExtensionPanels($viewer, $object);
+      foreach ($panels as $panel) {
+        $curtain->addPanel($panel);
+      }
     }
 
     return $curtain;
@@ -572,46 +576,6 @@ abstract class PhabricatorController extends AphrontController {
   public function buildStandardPageResponse($view, array $data) {
     $page = $this->buildStandardPageView();
     $page->appendChild($view);
-    return $page->produceAphrontResponse();
-  }
-
-
-  /**
-   * DEPRECATED. Use @{method:newPage}.
-   */
-  public function buildApplicationPage($view, array $options) {
-    $page = $this->newPage();
-
-    $title = PhabricatorEnv::getEnvConfig('phabricator.serious-business') ?
-      'Phabricator' :
-      pht('Bacon Ice Cream for Breakfast');
-
-    $page->setTitle(idx($options, 'title', $title));
-
-    if (idx($options, 'class')) {
-      $page->addClass($options['class']);
-    }
-
-    if (!($view instanceof AphrontSideNavFilterView)) {
-      $nav = new AphrontSideNavFilterView();
-      $nav->appendChild($view);
-      $view = $nav;
-    }
-
-    $page->appendChild($view);
-
-    $object_phids = idx($options, 'pageObjects', array());
-    if ($object_phids) {
-      $page->setPageObjectPHIDs($object_phids);
-    }
-
-    if (!idx($options, 'device', true)) {
-      $page->setDeviceReady(false);
-    }
-
-    $page->setShowFooter(idx($options, 'showFooter', true));
-    $page->setShowChrome(idx($options, 'chrome', true));
-
     return $page->produceAphrontResponse();
   }
 

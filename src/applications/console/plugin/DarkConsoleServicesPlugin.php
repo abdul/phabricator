@@ -57,9 +57,7 @@ final class DarkConsoleServicesPlugin extends DarkConsolePlugin {
       // For each SELECT query, go issue an EXPLAIN on it so we can flag stuff
       // causing table scans, etc.
       if (preg_match('/^\s*SELECT\b/i', $entry['query'])) {
-        $conn = PhabricatorEnv::newObjectFromConfig(
-          'mysql.implementation',
-          array($entry['config']));
+        $conn = PhabricatorDatabaseRef::newRawConnection($entry['config']);
         try {
           $explain = queryfx_all(
             $conn,
@@ -172,7 +170,8 @@ final class DarkConsoleServicesPlugin extends DarkConsolePlugin {
           'a',
           array(
             'href'  => $data['analyzeURI'],
-            'class' => $data['didAnalyze'] ? 'disabled button' : 'green button',
+            'class' => $data['didAnalyze'] ?
+              'disabled button' : 'button button-green',
           ),
           pht('Analyze Query Plans')),
         phutil_tag('h1', array(), pht('Calls to External Services')),

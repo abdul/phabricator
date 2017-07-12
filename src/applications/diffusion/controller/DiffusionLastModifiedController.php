@@ -16,6 +16,7 @@ final class DiffusionLastModifiedController extends DiffusionController {
     $drequest = $this->getDiffusionRequest();
 
     $paths = $request->getStr('paths');
+
     try {
       $paths = phutil_json_decode($paths);
     } catch (PhutilJSONParserException $ex) {
@@ -131,7 +132,11 @@ final class DiffusionLastModifiedController extends DiffusionController {
         }
       }
 
-      $details = AphrontTableView::renderSingleDisplayLine($data->getSummary());
+      $details = DiffusionView::linkDetail(
+        $drequest->getRepository(),
+        $commit->getCommitIdentifier(),
+        $data->getSummary());
+      $details = AphrontTableView::renderSingleDisplayLine($details);
     } else {
       $author = '';
       $details = '';

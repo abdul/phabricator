@@ -141,7 +141,7 @@ final class HarbormasterBuildViewController
         if ($ended) {
           $when[] = pht(
             'Completed at %s',
-            phabricator_datetime($started, $viewer));
+            phabricator_datetime($ended, $viewer));
 
           $duration = ($ended - $started);
           if ($duration) {
@@ -581,9 +581,9 @@ final class HarbormasterBuildViewController
     } else {
       $status = $build->getBuildStatus();
       $status_name =
-        HarbormasterBuild::getBuildStatusName($status);
-      $icon = HarbormasterBuild::getBuildStatusIcon($status);
-      $color = HarbormasterBuild::getBuildStatusColor($status);
+        HarbormasterBuildStatus::getBuildStatusName($status);
+      $icon = HarbormasterBuildStatus::getBuildStatusIcon($status);
+      $color = HarbormasterBuildStatus::getBuildStatusColor($status);
     }
 
     $item->setTarget($status_name);

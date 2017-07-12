@@ -10,6 +10,7 @@ final class PHUITwoColumnView extends AphrontTagView {
   private $header;
   private $subheader;
   private $footer;
+  private $tabs;
   private $propertySection = array();
   private $curtain;
 
@@ -42,13 +43,22 @@ final class PHUITwoColumnView extends AphrontTagView {
     return $this;
   }
 
+  public function setTabs(PHUIListView $tabs) {
+    $tabs->setType(PHUIListView::TABBAR_LIST);
+    $this->tabs = $tabs;
+    return $this;
+  }
+
   public function setFooter($footer) {
     $this->footer = $footer;
     return $this;
   }
 
   public function addPropertySection($title, $section) {
-    $this->propertySection[] = array($title, $section);
+    $this->propertySection[] = array(
+      'header' => $title,
+      'content' => $section,
+    );
     return $this;
   }
 
@@ -88,6 +98,10 @@ final class PHUITwoColumnView extends AphrontTagView {
       $classes[] = 'phui-two-column-fluid';
     }
 
+    if ($this->tabs) {
+      $classes[] = 'with-tabs';
+    }
+
     if ($this->subheader) {
       $classes[] = 'with-subheader';
     }
@@ -121,6 +135,12 @@ final class PHUITwoColumnView extends AphrontTagView {
         'phui-two-column-header', $this->header);
     }
 
+    $tabs = null;
+    if ($this->tabs) {
+      $tabs = phutil_tag_div(
+        'phui-two-column-tabs', $this->tabs);
+    }
+
     $subheader = null;
     if ($this->subheader) {
       $subheader = phutil_tag_div(
@@ -134,6 +154,7 @@ final class PHUITwoColumnView extends AphrontTagView {
       ),
       array(
         $header,
+        $tabs,
         $subheader,
         $table,
         $footer,
@@ -146,13 +167,25 @@ final class PHUITwoColumnView extends AphrontTagView {
     $sections = $this->propertySection;
 
     if ($sections) {
-      foreach ($sections as $content) {
-        if ($content[1]) {
-          $view[] = id(new PHUIObjectBoxView())
-            ->setHeaderText($content[0])
-            ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
-            ->appendChild($content[1]);
+      foreach ($sections as $section) {
+        $section_header = $section['header'];
+
+        $section_content = $section['content'];
+        if ($section_content === null) {
+          continue;
         }
+
+        if ($section_header instanceof PHUIHeaderView) {
+          $header = $section_header;
+        } else {
+          $header = id(new PHUIHeaderView())
+            ->setHeader($section_header);
+        }
+
+        $view[] = id(new PHUIObjectBoxView())
+          ->setHeader($header)
+          ->setBackground(PHUIObjectBoxView::BLUE_PROPERTY)
+          ->appendChild($section_content);
       }
     }
 
